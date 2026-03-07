@@ -1,7 +1,6 @@
 import {
   LayoutDashboard,
   Settings,
-  Book,
   Wrench,
   History,
   FolderOpen,
@@ -12,18 +11,30 @@ import {
   FlaskConical,
   MessageCircle,
   Terminal,
+  ChevronDown,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { AppId } from '@/lib/api';
 import type { VisibleApps } from '@/types';
-import { McpIcon } from '@/components/BrandIcons';
-import { AppSwitcher } from '@/components/AppSwitcher';
 import { ProxyToggle } from '@/components/proxy/ProxyToggle';
 import { FailoverToggle } from '@/components/proxy/FailoverToggle';
-import { Button } from '@/components/ui/button';
 import { useProxyStatus } from '@/hooks/useProxyStatus';
 import { useOpenClawServiceStatus } from '@/hooks/useOpenClaw';
+import { ProviderIcon } from '@/components/ProviderIcon';
+import { APP_IDS } from '@/config/appConfig';
+import { useTheme } from '@/components/theme-provider';
+import { getCurrentVersion } from '@/lib/updater';
+import appIconUrl from '@/assets/icons/app-icon.png';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type View =
   | "dashboard"
@@ -50,6 +61,7 @@ interface SidebarProps {
   onViewChange: (view: View) => void;
   onAppChange: (app: AppId) => void;
   enableLocalProxy?: boolean;
+  dragBarHeight?: number;
 }
 
 interface MenuItem {
@@ -66,8 +78,20 @@ export function Sidebar({
   onViewChange,
   onAppChange,
   enableLocalProxy = false,
+  dragBarHeight = 0,
 }: SidebarProps) {
   const { t } = useTranslation();
+  const { theme, setTheme } = useTheme();
+  const [appVersion, setAppVersion] = useState('');
+
+  useEffect(() => {
+    getCurrentVersion().then(setAppVersion).catch(() => {});
+  }, []);
+
+  const toggleTheme = (e: React.MouseEvent) => {
+    setTheme(theme === 'dark' ? 'light' : 'dark', e);
+  };
+
   const {
     isRunning: isProxyRunning,
     takeoverStatus,
@@ -123,7 +147,7 @@ export function Sidebar({
 
   const appMenuItems = getAppMenuItems();
 
-  const renderMenuItem = (item: MenuItem, isGlobal = false) => {
+  const renderMenuItem = (item: MenuItem) => {
     const isActive = currentView === item.id;
     const Icon = item.icon;
 
@@ -132,17 +156,12 @@ export function Sidebar({
         <button
           onClick={() => onViewChange(item.id)}
           className={cn(
-            'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-smooth',
+            'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-smooth',
             isActive
-              ? 'bg-bg-tertiary text-text-primary'
-              : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
+              ? 'bg-accent/12 text-accent font-medium'
+              : 'text-text-muted font-normal hover:text-text-primary hover:bg-bg-tertiary'
           )}
         >
-          {/* Active indicator dot */}
-          <span className={cn(
-            'flex-shrink-0 w-1.5 h-1.5 rounded-full transition-smooth',
-            isActive ? 'bg-accent' : 'bg-transparent'
-          )} />
           <Icon size={16} className="flex-shrink-0" />
           <span>{item.label}</span>
         </button>
@@ -150,37 +169,115 @@ export function Sidebar({
     );
   };
 
+  const appsToShow = APP_IDS.filter((app) => {
+    if (!visibleApps) return true;
+    return visibleApps[app];
+  });
+
+  const appIconName: Record<AppId, string> = {
+    claude: 'claude',
+    codex: 'openai',
+    gemini: 'gemini',
+    opencode: 'opencode',
+    openclaw: 'openclaw',
+    qwen: 'qwen',
+    cline: 'cline',
+  };
+
+  const appDisplayName: Record<AppId, string> = {
+    claude: 'Claude',
+    codex: 'Codex',
+    gemini: 'Gemini',
+    opencode: 'OpenCode',
+    openclaw: 'OpenClaw',
+    qwen: 'Qwen Code',
+    cline: 'Cline',
+  };
+
   return (
-    <aside className="w-64 min-h-0 bg-bg-sidebar border-r border-border-subtle flex flex-col">
-      {/* Logo 区域 */}
-      <div className="h-12 flex items-center px-5 border-b border-border-subtle" data-tauri-drag-region>
-        <div className="flex items-center gap-2 pointer-events-none">
-          {/* Claw switch wordmark */}
-          {/* <svg viewBox="0 0 120 28" fill="none" className="h-[14px]" style={{ width: 'auto' }}>
-            <text x="0" y="20" fontSize="20" fontWeight="700" fontFamily="Inter, -apple-system, sans-serif" fill="currentColor">Claw</text>
-            <text x="32" y="20" fontSize="20" fontWeight="400" fontFamily="Inter, -apple-system, sans-serif" fill="var(--color-accent)">Switch</text>
-          </svg> */}
-        </div>
+    <aside className="w-56 min-h-0 bg-bg-sidebar border-r border-border-subtle flex flex-col" style={{ paddingTop: dragBarHeight }}>
+      {/* ── 品牌区：Claw Switch Logo + 版本 + 主题切换 ── */}
+      <div
+        className="flex items-center gap-2.5 px-4 border-b border-border-subtle"
+        style={{ height: 48, paddingTop: 0 }}
+        data-tauri-drag-region
+      >
+        <img
+          src={appIconUrl}
+          alt="Claw Switch"
+          className="w-5 h-5 rounded flex-shrink-0 select-none"
+          draggable={false}
+        />
+        <span className="text-sm font-semibold text-text-primary flex-1 min-w-0 truncate tracking-tight select-none">
+          Claw Switch
+        </span>
+        {appVersion && (
+          <span className="text-[10px] font-medium text-text-tertiary tabular-nums select-none flex-shrink-0">
+            v{appVersion}
+          </span>
+        )}
+        <button
+          onClick={toggleTheme}
+          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+          title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}
+        >
+          {theme === 'dark'
+            ? <Sun className="w-3.5 h-3.5" />
+            : <Moon className="w-3.5 h-3.5" />}
+        </button>
       </div>
 
-      {/* 应用切换器 */}
-      <div className="px-3 py-3 border-b border-border-subtle">
-        <div className="space-y-1.5">
-          <AppSwitcher
-            activeApp={activeApp}
-            onSwitch={onAppChange}
-            visibleApps={visibleApps}
-            compact={false}
-          />
-        </div>
+      {/* ── App Chip 切换区 ── */}
+      <div className="px-3 py-2.5 border-b border-border-subtle" data-tauri-drag-region>
+        <p className="text-[10px] font-medium text-text-tertiary uppercase tracking-widest px-1 mb-1.5 select-none">
+          {t('sidebar.managedApp', { defaultValue: '管理对象' })}
+        </p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary hover:bg-bg-tertiary transition-colors group w-full"
+              style={{ WebkitAppRegion: 'no-drag' } as any}
+            >
+              <ProviderIcon
+                icon={appIconName[activeApp]}
+                name={appDisplayName[activeApp]}
+                size={16}
+              />
+              <span className="text-xs font-medium text-text-primary truncate flex-1 min-w-0 text-left">
+                {appDisplayName[activeApp]}
+              </span>
+              <ChevronDown className="w-3 h-3 text-text-muted flex-shrink-0 group-hover:text-text-primary transition-colors" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" sideOffset={4} className="w-52">
+            {appsToShow.map((app) => (
+              <DropdownMenuItem
+                key={app}
+                onClick={() => onAppChange(app)}
+                className={cn(
+                  'flex items-center gap-2.5 cursor-pointer',
+                  app === activeApp && 'bg-accent/10 text-accent'
+                )}
+              >
+                <ProviderIcon
+                  icon={appIconName[app]}
+                  name={appDisplayName[app]}
+                  size={18}
+                />
+                <span className="font-medium">{appDisplayName[app]}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* 功能菜单 */}
-      <nav className="flex-1 py-3 px-2 overflow-y-auto">
-        <ul className="space-y-1.5">
-          {globalMenuItems.map((item) => renderMenuItem(item, true))}
+      <nav className="flex-1 py-2 px-2 overflow-y-auto">
+        <ul className="space-y-0.5">
+          {globalMenuItems.map((item) => renderMenuItem(item))}
           {appMenuItems.map((item) => renderMenuItem(item))}
-          {renderMenuItem(settingsMenuItem, true)}
+          {renderMenuItem(settingsMenuItem)}
         </ul>
       </nav>
 

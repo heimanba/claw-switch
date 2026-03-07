@@ -11,6 +11,12 @@ import {
   BarChart2,
   Download,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Provider } from "@/types";
 import type { EnvConflict } from "@/types/env";
 import { useProvidersQuery, useSettingsQuery } from "@/lib/query";
@@ -49,7 +55,6 @@ import type { SkillsViewHandle } from "@/components/skills/SkillsView";
 import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
 import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { UniversalProviderPanel } from "@/components/universal";
-import { Button } from "@/components/ui/button";
 import { SessionManagerPage } from "@/components/sessions/SessionManagerPage";
 import {
   useDisableCurrentOmo,
@@ -989,90 +994,108 @@ function App() {
   };
 
   const renderHeaderActions = () => {
+    const iconBtnClass = "w-9 h-9 inline-flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors";
+
     switch (currentView) {
       case "prompts":
         return (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => promptPanelRef.current?.openAdd()}
-            className="hover:bg-black/5 dark:hover:bg-white/5"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            {t("prompts.add")}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={iconBtnClass}
+                  onClick={() => promptPanelRef.current?.openAdd()}
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("prompts.add")}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       case "mcp":
         return (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => mcpPanelRef.current?.openImport()}
-              className="hover:bg-black/5 dark:hover:bg-white/5"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              {t("mcp.importExisting")}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => mcpPanelRef.current?.openAdd()}
-              className="hover:bg-black/5 dark:hover:bg-white/5"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              {t("mcp.addMcp")}
-            </Button>
-          </>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={iconBtnClass}
+                  onClick={() => mcpPanelRef.current?.openImport()}
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("mcp.importExisting")}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={iconBtnClass}
+                  onClick={() => mcpPanelRef.current?.openAdd()}
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("mcp.addMcp")}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       case "skills":
         return null;
       case "providers":
         return (
-          <Button
-            onClick={() => setIsAddOpen(true)}
-            size="sm"
-            variant="outline"
-            className="border-border hover:bg-accent/8 hover:text-accent hover:border-accent/50 transition-colors"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            {t("providers.add", { defaultValue: "添加供应商" })}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={iconBtnClass}
+                  onClick={() => setIsAddOpen(true)}
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {t("providers.add", { defaultValue: "添加供应商" })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       case "dashboard":
         return (
-          <>
+          <TooltipProvider>
             {isCurrentAppTakeoverActive && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSettingsDefaultTab("usage");
-                  setCurrentView("settings");
-                }}
-                title={t("usage.title", {
-                  defaultValue: "使用统计",
-                })}
-                className="hover:bg-black/5 dark:hover:bg-white/5"
-              >
-                <BarChart2 className="w-4 h-4 mr-2" />
-                {t("usage.title", { defaultValue: "使用统计" })}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={iconBtnClass}
+                    onClick={() => {
+                      setSettingsDefaultTab("usage");
+                      setCurrentView("settings");
+                    }}
+                  >
+                    <BarChart2 className="w-5 h-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {t("usage.title", { defaultValue: "使用统计" })}
+                </TooltipContent>
+              </Tooltip>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setSettingsDefaultTab("general");
-                setCurrentView("settings");
-              }}
-              title={t("common.settings")}
-              className="hover:bg-black/5 dark:hover:bg-white/5"
-            >
-              <Settings className="w-4 h-4 mr-2" />
-              {t("common.settings")}
-            </Button>
-          </>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={iconBtnClass}
+                  onClick={() => {
+                    setSettingsDefaultTab("general");
+                    setCurrentView("settings");
+                  }}
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("common.settings")}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       default:
         return null;
@@ -1123,6 +1146,7 @@ function App() {
         onViewChange={setCurrentView}
         onAppChange={handleAppChange}
         enableLocalProxy={settingsData?.enableLocalProxy}
+        dragBarHeight={DRAG_BAR_HEIGHT}
       />
 
       {/* 右侧主内容区 */}

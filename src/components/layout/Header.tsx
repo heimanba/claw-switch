@@ -34,10 +34,7 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
   const getViewTitle = (): string => {
     switch (currentView) {
       case 'dashboard':
-        return t('overview.title', { 
-          appName: t(`apps.${activeApp}`),
-          defaultValue: '{{appName}} 概览' 
-        });
+        return t('overview.title', { appName: t(`apps.${activeApp}`), defaultValue: '{{appName}} 概览' });
       case 'providers':
         return t('dashboard.appWorkspace', {
           appName: t(`apps.${activeApp}`),
@@ -80,10 +77,7 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
   const getViewDescription = (): string => {
     switch (currentView) {
       case 'dashboard':
-        return t('overview.description', { 
-          appName: t(`apps.${activeApp}`),
-          defaultValue: '查看 {{appName}} 状态和快速操作' 
-        });
+        return '';
       case 'providers':
         return t('providers.description', { defaultValue: '配置和管理模型供应商' });
       case 'settings':
@@ -113,25 +107,34 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
     }
   };
 
+  const description = getViewDescription();
+
   return (
     <header 
       className={cn(
-        "h-12 bg-bg-primary border-b border-border-subtle flex items-center justify-between px-5",
+        "h-16 bg-bg-primary/80 backdrop-blur-md shadow-[0_1px_0_0_var(--color-border-subtle)] flex items-center justify-between px-6",
         className
       )}
       data-tauri-drag-region
     >
-      {/* 左侧：页面标题 */}
+      {/* 左侧：页面标题 + 副标题 */}
       <div className="flex-1 min-w-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
-        <h1 className="text-base font-semibold text-text-primary truncate">
-          {getViewTitle()}
-        </h1>
+        <div className="flex items-baseline gap-3 min-w-0">
+          <h1 className="text-2xl font-bold text-text-primary truncate shrink-0 tracking-tight">
+            {getViewTitle()}
+          </h1>
+          {description && (
+            <span className="text-sm text-text-muted truncate hidden sm:block">
+              {description}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 右侧：页面特定操作 */}
       {children && (
         <div 
-          className="flex items-center gap-1.5 ml-4"
+          className="flex items-center gap-2 ml-4"
           style={{ WebkitAppRegion: 'no-drag' } as any}
         >
           {children}

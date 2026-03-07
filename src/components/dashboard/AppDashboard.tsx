@@ -47,7 +47,6 @@ import {
 } from "lucide-react";
 import type { AppId } from "@/lib/api";
 import type { Provider } from "@/types";
-import { ProviderIcon } from "@/components/ProviderIcon";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToolVersionQuery } from "@/lib/query/queries";
@@ -97,16 +96,6 @@ export interface AppOverviewProps {
   onOpenAction?: (action: DashboardQuickAction) => void;
 }
 
-
-const APP_ICON_NAME: Record<AppId, string> = {
-  claude: "claude",
-  codex: "openai",
-  gemini: "gemini",
-  opencode: "opencode",
-  openclaw: "openclaw",
-  qwen: "qwen",
-  cline: "cline",
-};
 
 interface CapabilityCardDef {
   id: DashboardQuickAction;
@@ -426,47 +415,9 @@ export function AppDashboard({
 
   return (
     <div className="px-6 py-6 min-h-full space-y-5">
-      {/* ===== App Header - 更紧凑的设计 ===== */}
-      <div className="flex items-center gap-3">
-        <div className="flex-shrink-0 rounded-lg bg-bg-secondary p-2.5">
-          <ProviderIcon
-            icon={APP_ICON_NAME[activeApp]}
-            name={t(`apps.${activeApp}`)}
-            size={32}
-          />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <h2 className="text-xl font-bold text-text-primary">
-              {t(`apps.${activeApp}`)}
-            </h2>
-            {effectiveCliInstalled && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-                <CheckCircle className="w-3 h-3" />
-                {cliVersion
-                  ? t("overview.statusBadge.cli", { version: cliVersion })
-                  : "CLI ✓"}
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-text-muted">
-            {t(`overview.appDescription.${activeApp}`, { defaultValue: "智能体操作平台，工具调用专家" })}
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={isSpinning}
-          title={t("overview.cli.refreshButton")}
-          className={`h-8 w-8 p-0 flex-shrink-0 ${isSpinning ? "bg-transparent border-none hover:bg-transparent disabled:opacity-100" : ""}`}
-        >
-          <RefreshCw className={`h-4 w-4 ${isSpinning ? "animate-spin text-text-muted" : ""}`} />
-        </Button>
-      </div>
 
       {/* ===== Node.js 环境警告（无论 CLI 是否安装均显示）===== */}
-      {["claude", "codex", "gemini", "opencode", "qwen", "openclaw"].includes(activeApp) && cliEnv && (
+      {["claude", "codex", "gemini", "opencode", "qwen", "openclaw"].includes(activeApp) && cliEnv && (!cliEnv.has_node || (cliEnv.has_node && !cliEnv.node_version_ok)) && (
         <div className="text-xs text-text-muted space-y-1 mb-4">
           {!cliEnv.has_node && (
             <div className="flex items-center justify-between gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2">
@@ -641,8 +592,20 @@ export function AppDashboard({
                 <p className="text-sm text-text-muted">{t("overview.appStatus.subtitle")}</p>
               </div>
             </div>
-            <div className="px-3 py-1.5 rounded-full bg-green-100 border border-green-200">
-              <span className="text-sm font-semibold text-green-700">{t("overview.appStatus.ready")}</span>
+          <div className="flex items-center gap-2">
+              <div className="px-3 py-1.5 rounded-full bg-green-100 border border-green-200">
+                <span className="text-sm font-semibold text-green-700">{t("overview.appStatus.ready")}</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={isSpinning}
+                title={t("overview.cli.refreshButton")}
+                className={`h-8 w-8 p-0 flex-shrink-0 ${isSpinning ? "bg-transparent border-none hover:bg-transparent disabled:opacity-100" : ""}`}
+              >
+                <RefreshCw className={`h-4 w-4 ${isSpinning ? "animate-spin text-text-muted" : ""}`} />
+              </Button>
             </div>
           </div>
           
@@ -788,6 +751,16 @@ export function AppDashboard({
                         {t("overview.openclaw.start")}
                       </Button>
                   )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRefresh}
+                    disabled={isSpinning}
+                    title={t("overview.cli.refreshButton")}
+                    className={`h-8 w-8 p-0 flex-shrink-0 ${isSpinning ? "bg-transparent border-none hover:bg-transparent disabled:opacity-100" : ""}`}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isSpinning ? "animate-spin text-text-muted" : ""}`} />
+                  </Button>
                 </div>
               </div>
 
