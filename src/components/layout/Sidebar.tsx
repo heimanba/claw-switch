@@ -156,14 +156,23 @@ export function Sidebar({
         <button
           onClick={() => onViewChange(item.id)}
           className={cn(
-            'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-smooth',
+            'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-[color,background-color,opacity] duration-150 ease-out',
             isActive
-              ? 'bg-accent/12 text-accent font-medium'
+              ? 'bg-bg-tertiary text-accent font-medium'
               : 'text-text-muted font-normal hover:text-text-primary hover:bg-bg-tertiary'
           )}
         >
-          <Icon size={16} className="flex-shrink-0" />
-          <span>{item.label}</span>
+          <Icon
+            size={16}
+            className={cn(
+              'flex-shrink-0 transition-colors duration-150',
+              isActive ? 'text-accent' : 'text-text-tertiary group-hover:text-text-primary'
+            )}
+          />
+          <span className="truncate">{item.label}</span>
+          {isActive && (
+            <span className="ml-auto w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0 opacity-80" />
+          )}
         </button>
       </li>
     );
