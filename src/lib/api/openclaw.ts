@@ -1,0 +1,246 @@
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  OpenClawDefaultModel,
+  OpenClawModelCatalogEntry,
+  OpenClawAgentsDefaults,
+  OpenClawEnvConfig,
+  OpenClawToolsConfig,
+} from "@/types";
+
+/**
+ * OpenClaw configuration API
+ *
+ * Manages ~/.openclaw/openclaw.json sections:
+ * - agents.defaults (model, catalog)
+ * - env (environment variables)
+ * - tools (permissions)
+ */
+export const openclawApi = {
+  // ============================================================
+  // Agents Configuration
+  // ============================================================
+
+  /**
+   * Get all available model IDs from models.providers.${provider}/models[*].id
+   * Returns a list of "provider/model-id" strings.
+   */
+  async getProviderModels(): Promise<string[]> {
+    return await invoke("get_openclaw_provider_models");
+  },
+
+  /**
+   * Get default model configuration (agents.defaults.model)
+   */
+  async getDefaultModel(): Promise<OpenClawDefaultModel | null> {
+    return await invoke("get_openclaw_default_model");
+  },
+
+  /**
+   * Set default model configuration (agents.defaults.model)
+   */
+  async setDefaultModel(model: OpenClawDefaultModel): Promise<void> {
+    return await invoke("set_openclaw_default_model", { model });
+  },
+
+  /**
+   * Get model catalog/allowlist (agents.defaults.models)
+   */
+  async getModelCatalog(): Promise<Record<
+    string,
+    OpenClawModelCatalogEntry
+  > | null> {
+    return await invoke("get_openclaw_model_catalog");
+  },
+
+  /**
+   * Set model catalog/allowlist (agents.defaults.models)
+   */
+  async setModelCatalog(
+    catalog: Record<string, OpenClawModelCatalogEntry>,
+  ): Promise<void> {
+    return await invoke("set_openclaw_model_catalog", { catalog });
+  },
+
+  /**
+   * Get full agents.defaults config (all fields)
+   */
+  async getAgentsDefaults(): Promise<OpenClawAgentsDefaults | null> {
+    return await invoke("get_openclaw_agents_defaults");
+  },
+
+  /**
+   * Set full agents.defaults config (all fields)
+   */
+  async setAgentsDefaults(defaults: OpenClawAgentsDefaults): Promise<void> {
+    return await invoke("set_openclaw_agents_defaults", { defaults });
+  },
+
+  // ============================================================
+  // Env Configuration
+  // ============================================================
+
+  /**
+   * Get env config (env section of openclaw.json)
+   */
+  async getEnv(): Promise<OpenClawEnvConfig> {
+    return await invoke("get_openclaw_env");
+  },
+
+  /**
+   * Set env config (env section of openclaw.json)
+   */
+  async setEnv(env: OpenClawEnvConfig): Promise<void> {
+    return await invoke("set_openclaw_env", { env });
+  },
+
+  // ============================================================
+  // Tools Configuration
+  // ============================================================
+
+  /**
+   * Get tools config (tools section of openclaw.json)
+   */
+  async getTools(): Promise<OpenClawToolsConfig> {
+    return await invoke("get_openclaw_tools");
+  },
+
+  /**
+   * Set tools config (tools section of openclaw.json)
+   */
+  async setTools(tools: OpenClawToolsConfig): Promise<void> {
+    return await invoke("set_openclaw_tools", { tools });
+  },
+
+  // ============================================================
+  // Service Status
+  // ============================================================
+
+  /**
+   * Check whether the OpenClaw gateway service is running (port 18789).
+   */
+  async getServiceStatus(): Promise<boolean> {
+    return await invoke("get_openclaw_service_status");
+  },
+
+  /**
+   * Get detailed OpenClaw gateway service status (running, pid, port, gateway_installed).
+   */
+  async getServiceDetail(): Promise<{
+    running: boolean;
+    pid: number | null;
+    port: number;
+    /** Whether the gateway system service (launchd/systemd) is installed. null = unknown. */
+    gateway_installed: boolean | null;
+  }> {
+    return await invoke("get_openclaw_service_detail");
+  },
+
+  /**
+   * Install the openclaw gateway system service via `openclaw gateway install`.
+   */
+  async installGateway(): Promise<string> {
+    return await invoke("install_openclaw_gateway");
+  },
+
+  /**
+   * Start the OpenClaw gateway service in the background.
+   */
+  async startService(): Promise<string> {
+    return await invoke("start_openclaw_service");
+  },
+
+  /**
+   * Stop the OpenClaw gateway service.
+   */
+  async stopService(): Promise<string> {
+    return await invoke("stop_openclaw_service");
+  },
+
+  /**
+   * Restart the OpenClaw gateway service.
+   */
+  async restartService(): Promise<string> {
+    return await invoke("restart_openclaw_service");
+  },
+
+  /**
+   * Run system diagnostic (config existence, gateway service). Aligned with openclaw-manager.
+   */
+  async runDiagnostic(): Promise<{
+    config_exists: boolean;
+    config_path: string;
+    service_running: boolean;
+    port: number;
+  }> {
+    return await invoke("run_openclaw_diagnostic");
+  },
+
+  /**
+   * 运行完整系统诊断，返回逐项结果（与 openclaw-manager run_doctor 对齐）
+   */
+  async runDoctor(): Promise<Array<{
+    name: string;
+    passed: boolean;
+    message: string;
+    suggestion: string | null;
+  }>> {
+    return await invoke("run_doctor");
+  },
+
+  /**
+   * 执行 `openclaw doctor --repair --yes`，自动修复已知问题（非交互式）。
+   * 修复完成后应重启网关服务并重新诊断。
+   */
+  async runDoctorFix(): Promise<{ success: boolean; output: string }> {
+    return await invoke("run_doctor_fix");
+  },
+
+  /**
+   * 执行 `openclaw onboard`，在浏览器中打开 OpenClaw Web 管理界面。
+   */
+  async openOnboard(): Promise<string> {
+    return await invoke("openclaw_onboard");
+  },
+
+  /**
+   * 获取所有渠道配置状态（读取 openclaw.json channels 节）
+   */
+  async getChannelsConfig(): Promise<Array<{
+    id: string;
+    channel_type: string;
+    enabled: boolean;
+    config: Record<string, unknown>;
+  }>> {
+    return await invoke("get_openclaw_channels_config");
+  },
+
+  // ============================================================
+  // Log Files (aligned with openclaw-manager)
+  // ============================================================
+
+  /**
+   * 列出可用的 OpenClaw 日志文件
+   */
+  async listLogs(): Promise<Array<{
+    name: string;
+    path: string;
+    size: number;
+    modified: string | null;
+  }>> {
+    return await invoke("list_openclaw_logs");
+  },
+
+  /**
+   * 读取日志文件内容
+   */
+  async readLog(path: string, limit?: number): Promise<string> {
+    return await invoke("read_openclaw_log", { path, limit });
+  },
+
+  /**
+   * 清空日志文件
+   */
+  async clearLog(path: string): Promise<void> {
+    return await invoke("clear_openclaw_log", { path });
+  },
+};

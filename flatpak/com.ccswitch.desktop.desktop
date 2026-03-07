@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Claw switch
+Comment=All-in-One Assistant for Claude Code, Codex & Gemini CLI
+Exec=claw-switch
+Icon=com.clawswitch.desktop
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true

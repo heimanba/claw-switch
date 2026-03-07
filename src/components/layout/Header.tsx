@@ -1,0 +1,142 @@
+import { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
+import type { AppId } from '@/lib/api';
+
+type View =
+  | "dashboard"
+  | "providers"
+  | "settings"
+  | "prompts"
+  | "skills"
+  | "mcp"
+  | "agents"
+  | "universal"
+  | "sessions"
+  | "workspace"
+  | "openclawEnv"
+  | "openclawTools"
+  | "openclawAgents"
+  | "openclawTesting"
+  | "openclawChannels"
+  | "openclawLogs";
+
+interface HeaderProps {
+  currentView: View;
+  activeApp: AppId;
+  children?: ReactNode; // 用于放置页面特定的操作按钮
+  className?: string;
+}
+
+export function Header({ currentView, activeApp, children, className }: HeaderProps) {
+  const { t } = useTranslation();
+
+  const getViewTitle = (): string => {
+    switch (currentView) {
+      case 'dashboard':
+        return t('overview.title', { 
+          appName: t(`apps.${activeApp}`),
+          defaultValue: '{{appName}} 概览' 
+        });
+      case 'providers':
+        return t('dashboard.appWorkspace', {
+          appName: t(`apps.${activeApp}`),
+          defaultValue: '{{appName}} 工作台',
+        });
+      case 'settings':
+        return t('settings.title', { defaultValue: '系统设置' });
+      case 'prompts':
+        return t('prompts.title', { 
+          appName: t(`apps.${activeApp}`),
+          defaultValue: '提示词管理',
+        });
+      case 'skills':
+        return t('skills.title', { defaultValue: 'Skills 管理' });
+      case 'mcp':
+        return t('mcp.unifiedPanel.title', { defaultValue: 'MCP 服务配置' });
+      case 'agents':
+        return t('agents.title', { defaultValue: '智能体管理' });
+      case 'universal':
+        return t('universalProvider.title', { defaultValue: '统一供应商' });
+      case 'sessions':
+        return t('sessionManager.title', { defaultValue: '会话管理' });
+      case 'workspace':
+        return t('workspace.title', { defaultValue: '工作区文件' });
+      case 'openclawEnv':
+        return t('openclaw.env.title', { defaultValue: '环境变量' });
+      case 'openclawTools':
+        return t('openclaw.tools.title', { defaultValue: '核心工具' });
+      case 'openclawAgents':
+        return t('openclaw.agents.title', { defaultValue: '智能体配置' });
+      case 'openclawTesting':
+        return t('openclaw.testing.title', { defaultValue: '系统体检' });
+      case 'openclawChannels':
+        return t('openclaw.channels.title', { defaultValue: '消息渠道' });
+      default:
+        return t('common.unknown', { defaultValue: '未知页面' });
+    }
+  };
+
+  const getViewDescription = (): string => {
+    switch (currentView) {
+      case 'dashboard':
+        return t('overview.description', { 
+          appName: t(`apps.${activeApp}`),
+          defaultValue: '查看 {{appName}} 状态和快速操作' 
+        });
+      case 'providers':
+        return t('providers.description', { defaultValue: '配置和管理模型供应商' });
+      case 'settings':
+        return t('settings.description', { defaultValue: '系统配置和偏好设置' });
+      case 'prompts':
+        return t('prompts.description', { defaultValue: '管理提示词模板' });
+      case 'skills':
+        return t('skills.description', { defaultValue: '安装和管理技能插件' });
+      case 'mcp':
+        return t('mcp.description', { defaultValue: '配置模型上下文协议服务' });
+      case 'sessions':
+        return t('sessionManager.description', { defaultValue: '查看和管理对话会话' });
+      case 'workspace':
+        return t('workspace.description', { defaultValue: '管理工作区文件和项目' });
+      case 'openclawEnv':
+        return t('openclaw.env.description', { defaultValue: '配置环境变量和密钥' });
+      case 'openclawTools':
+        return t('openclaw.tools.description', { defaultValue: '配置可用工具和权限' });
+      case 'openclawAgents':
+        return t('openclaw.agents.description', { defaultValue: '配置智能体默认设置' });
+      case 'openclawTesting':
+        return t('openclaw.testing.subtitle', { defaultValue: '系统诊断与问题排查' });
+      case 'openclawChannels':
+        return t('openclaw.channels.description', { defaultValue: '配置 Telegram、Discord、飞书等通知渠道' });
+      default:
+        return '';
+    }
+  };
+
+  return (
+    <header 
+      className={cn(
+        "h-12 bg-bg-primary border-b border-border-subtle flex items-center justify-between px-5",
+        className
+      )}
+      data-tauri-drag-region
+    >
+      {/* 左侧：页面标题 */}
+      <div className="flex-1 min-w-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <h1 className="text-base font-semibold text-text-primary truncate">
+          {getViewTitle()}
+        </h1>
+      </div>
+
+      {/* 右侧：页面特定操作 */}
+      {children && (
+        <div 
+          className="flex items-center gap-1.5 ml-4"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+        >
+          {children}
+        </div>
+      )}
+    </header>
+  );
+}
