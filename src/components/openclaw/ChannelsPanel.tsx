@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
@@ -25,6 +25,9 @@ import {
   AlertTriangle,
   Trash2,
   RefreshCw,
+  ChevronDown,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -412,6 +415,185 @@ interface TestResult {
   message: string;
   error: string | null;
 }
+
+// 钉钉插件卡片组件
+interface DingTalkPluginCardProps {
+  status: DingTalkPluginStatus | null;
+  loading: boolean;
+  installing: boolean;
+  onInstall: () => void;
+  onRefresh: () => void;
+}
+
+const DingTalkPluginCard: React.FC<DingTalkPluginCardProps> = ({
+  status,
+  loading,
+  installing,
+  onInstall,
+  onRefresh,
+}) => {
+  const [showManual, setShowManual] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const installCommand = "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @soimy/dingtalk";
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(installCommand);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("复制失败");
+    }
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="mb-4 px-5">
+        <div className="p-4 bg-bg-secondary rounded-xl border border-border flex items-center gap-3">
+          <Loader2 size={18} className="animate-spin text-text-muted" />
+          <span className="text-sm text-text-muted">正在检查钉钉插件状态...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (status?.installed) {
+    return (
+      <div className="mb-4 px-5">
+        <div className="p-4 bg-green-50 rounded-xl border border-green-200 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+            <CheckCircle size={20} className="text-green-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-green-800">钉钉插件已安装</p>
+            <p className="text-xs text-green-600 mt-0.5">
+              @soimy/dingtalk{status.version && ` v${status.version}`}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onInstall}
+            disabled={installing}
+            className="border-green-300 text-green-800 hover:bg-green-100"
+          >
+            {installing ? (
+              <Loader2 size={14} className="animate-spin mr-2" />
+            ) : (
+              <RefreshCw size={14} className="mr-2" />
+            )}
+            {installing ? "安装中..." : "重新安装"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const isReinstall = status?.needs_reinstall;
+  const title = isReinstall ? "插件规格不匹配" : "钉钉插件未安装";
+  const description = isReinstall
+    ? `当前规格: ${status?.spec || "未知"}，需要重新安装`
+    : "安装插件后即可配置钉钉消息通知";
+
+  return (
+    <div className="mb-4 px-5">
+      <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+        {/* 状态头部 */}
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle size={20} className="text-amber-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-semibold text-amber-900">{title}</h4>
+            <p className="text-xs text-amber-700 mt-0.5">{description}</p>
+          </div>
+        </div>
+
+        {/* 主要操作 */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            onClick={onInstall}
+            disabled={installing}
+          >
+            {installing ? (
+              <Loader2 size={14} className="animate-spin mr-2" />
+            ) : (
+              <Download size={14} className="mr-2" />
+            )}
+            {installing ? "安装中..." : isReinstall ? "重新安装插件" : "一键安装插件"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onRefresh}
+            disabled={loading}
+          >
+            <RefreshCw size={14} className="mr-2" />
+            刷新状态
+          </Button>
+        </div>
+
+        {/* 手动安装折叠区 */}
+        <div className="mt-3">
+          <button
+            onClick={() => setShowManual(!showManual)}
+            className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 transition-colors"
+          >
+            <span>手动安装</span>
+            <ChevronDown
+              size={14}
+              className={cn("transition-transform", showManual && "rotate-180")}
+            />
+          </button>
+
+          {showManual && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-3"
+            >
+              {/* 命令复制区 */}
+              <div className="relative">
+                <div className="p-3 bg-stone-100 rounded-lg border border-stone-200">
+                  <code className="text-xs text-stone-700 font-mono break-all leading-relaxed block pr-8">
+                    {installCommand}
+                  </code>
+                </div>
+                <button
+                  onClick={handleCopy}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-stone-200 transition-colors"
+                  title="复制命令"
+                >
+                  {copied ? (
+                    <Check size={14} className="text-green-600" />
+                  ) : (
+                    <Copy size={14} className="text-stone-500" />
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </div>
+
+        {/* 文档链接 */}
+        <div className="mt-4 pt-3 border-t border-amber-200/60">
+          <a
+            href="https://github.com/soimy/openclaw-channel-dingtalk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 transition-colors"
+          >
+            <span>查看完整安装文档</span>
+            <ExternalLink size={12} />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const ChannelsPanel: React.FC = () => {
   const { t } = useTranslation();
@@ -962,87 +1144,13 @@ const ChannelsPanel: React.FC = () => {
 
               {/* 钉钉插件状态提示 */}
               {currentChannel.channel_type === "dingtalk" && (
-                <div className="mb-4 px-5">
-                  {dingtalkPluginLoading ? (
-                    <div className="p-3 bg-bg-secondary rounded-lg border border-border flex items-center gap-2">
-                      <Loader2 size={16} className="animate-spin text-text-muted" />
-                      <span className="text-sm text-text-muted">
-                        正在检查钉钉插件状态...
-                      </span>
-                    </div>
-                  ) : dingtalkPluginStatus?.installed ? (
-                    <div className="p-3 bg-green-50 rounded-lg border border-green-200 flex items-center gap-2">
-                      <Package size={16} className="text-green-600" />
-                      <div className="flex-1">
-                        <p className="text-sm text-green-700 font-medium">
-                          钉钉插件已安装
-                        </p>
-                        <p className="text-xs text-green-600 mt-0.5">
-                          @soimy/dingtalk
-                          {dingtalkPluginStatus.version &&
-                            ` v${dingtalkPluginStatus.version}`}
-                        </p>
-                      </div>
-                      <CheckCircle size={14} className="text-green-500" />
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle
-                          size={16}
-                          className="text-amber-600 mt-0.5 flex-shrink-0"
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-amber-800">
-                            {dingtalkPluginStatus?.needs_reinstall
-                              ? "插件规格不匹配，需要重新安装"
-                              : "需要安装钉钉插件"}
-                          </p>
-                          {dingtalkPluginStatus?.needs_reinstall && (
-                            <p className="text-xs text-amber-700 mt-0.5">
-                              当前规格: {dingtalkPluginStatus.spec || "未知"}，期望: @soimy/dingtalk
-                            </p>
-                          )}
-                          <p className="text-xs text-amber-700 mt-1">
-                            钉钉渠道需要先安装 @soimy/dingtalk 插件才能使用。
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              onClick={handleInstallDingtalkPlugin}
-                              disabled={dingtalkPluginInstalling}
-                            >
-                              {dingtalkPluginInstalling ? (
-                                <Loader2 size={13} className="animate-spin mr-1" />
-                              ) : (
-                                <Download size={13} className="mr-1" />
-                              )}
-                              {dingtalkPluginInstalling
-                                ? "安装中..."
-                                : dingtalkPluginStatus?.needs_reinstall
-                                  ? "一键重新安装"
-                                  : "一键安装插件"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={checkDingtalkPlugin}
-                              disabled={dingtalkPluginLoading}
-                            >
-                              刷新状态
-                            </Button>
-                          </div>
-                          <p className="text-xs text-amber-600 mt-2">
-                            或手动执行:{" "}
-                            <code className="px-1.5 py-0.5 bg-amber-100 rounded text-amber-800 font-mono">
-                              NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @soimy/dingtalk
-                            </code>
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <DingTalkPluginCard
+                  status={dingtalkPluginStatus}
+                  loading={dingtalkPluginLoading}
+                  installing={dingtalkPluginInstalling}
+                  onInstall={handleInstallDingtalkPlugin}
+                  onRefresh={checkDingtalkPlugin}
+                />
               )}
 
               <div className="space-y-4 flex-1 overflow-y-auto px-5 pb-4">

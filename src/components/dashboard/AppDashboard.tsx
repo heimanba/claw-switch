@@ -147,6 +147,7 @@ export function AppDashboard({
 
   const [cliInstalledLocally, setCliInstalledLocally] = useState(false);
   const [cliUninstalledLocally, setCliUninstalledLocally] = useState(false);
+  const [cliCheckLoading, setCliCheckLoading] = useState(true);
   const [cliEnv, setCliEnv] = useState<{
     has_node: boolean;
     node_version: string | null;
@@ -187,6 +188,8 @@ export function AppDashboard({
       : activeApp === "qwen" && cliEnv
       ? cliEnv.has_cli || isCliInstalled
       : isCliInstalled;
+  // 联合 toolVersion 加载状态：只要任意一个源返回数据就可结束骨架屏
+  const isCheckingCli = cliCheckLoading && !toolVersion;
   const providerReady = Object.keys(providers).length > 0;
 
   const handleInstall = useCallback(async () => {
@@ -386,8 +389,12 @@ export function AppDashboard({
   }, [activeApp, refetchToolVersion]);
 
   useEffect(() => {
+    setCliCheckLoading(true);
     // Only check for Node.js-based CLI tools
-    if (!["claude", "codex", "gemini", "opencode", "qwen", "openclaw"].includes(activeApp)) return;
+    if (!["claude", "codex", "gemini", "opencode", "qwen", "openclaw"].includes(activeApp)) {
+      setCliCheckLoading(false);
+      return;
+    }
     let active = true;
     const loadEnv = async () => {
       try {
@@ -399,6 +406,8 @@ export function AppDashboard({
         if (status.has_cli) setCliInstalledLocally(true);
       } catch (error) {
         console.error("[AppDashboard] Failed to check CLI env", error);
+      } finally {
+        if (active) setCliCheckLoading(false);
       }
     };
     void loadEnv();
@@ -412,6 +421,27 @@ export function AppDashboard({
   const capabilityCards = useMemo(() => getCapabilityCards(activeApp), [activeApp]);
   
   const cliVersion = toolVersion?.version || cliEnv?.cli_version;
+
+  // 仅在检测中且尚未确认 CLI 已安装时才显示骨架屏，避免已安装情况下闪屏
+  if (isCheckingCli && !effectiveCliInstalled) {
+    return (
+      <div className="px-6 py-6 min-h-full space-y-5">
+        <div className="rounded-xl border border-border-subtle bg-bg-card p-5 animate-pulse">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-bg-tertiary" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 bg-bg-tertiary rounded w-32" />
+              <div className="h-3 bg-bg-tertiary rounded w-48" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="h-20 bg-bg-tertiary rounded-xl" />
+            <div className="h-20 bg-bg-tertiary rounded-xl" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-6 py-6 min-h-full space-y-5">
@@ -453,8 +483,8 @@ export function AppDashboard({
         </div>
       )}
 
-      {/* ===== CLI 安装引导 ===== */}
-      {!effectiveCliInstalled && (
+      {/* ===== CLI 安装引导（仅在 CLI 检测完成后且确认未安装时显示）===== */}
+      {!cliCheckLoading && !effectiveCliInstalled && (
         <>
           <div className="rounded-xl border-2 border-dashed border-accent/30 bg-accent/5 p-5">
             <div className="flex items-center gap-4 mb-4">
@@ -810,6 +840,26 @@ export function AppDashboard({
               </div>
 
             </div>
+
+            {/* 供应商为空时的引导 Banner */}
+            {providerCount === 0 && !isLoading && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span className="text-sm font-medium text-amber-800">
+                    {t("overview.appStatus.noProviderWarning")}
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={() => onOpenAction?.('providers')}
+                    className="ml-auto bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    {t("overview.appStatus.addProvider")}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* 渠道状态卡片 */}
             {(() => {

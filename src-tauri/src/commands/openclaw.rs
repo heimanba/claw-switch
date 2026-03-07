@@ -1581,54 +1581,49 @@ pub async fn install_openclaw_feishu_plugin() -> Result<String, String> {
     }
 }
 
-/// Check whether the dingtalk plugin is installed and has correct spec
+/// Check whether the dingtalk plugin is installed by checking
+/// ~/.openclaw/extensions/dingtalk/package.json existence.
 #[tauri::command]
 pub async fn check_openclaw_dingtalk_plugin() -> Result<DingTalkPluginStatus, String> {
-    info!("[钉钉插件] 检查钉钉插件安装状态...");
-    let config = load_openclaw_config_json()?;
+    info!("[钉钉插件] 检查钉钉插件安装状态（~/.openclaw/extensions/dingtalk/package.json）...");
+    let openclaw_dir = openclaw_config::get_openclaw_dir();
+    let package_json_path = openclaw_dir
+        .join("extensions")
+        .join("dingtalk")
+        .join("package.json");
 
-    let installs_dingtalk = config.pointer("/plugins/installs/dingtalk");
-
-    match installs_dingtalk {
-        None => {
-            info!("[钉钉插件] plugins.installs.dingtalk 不存在，需要安装");
-            Ok(DingTalkPluginStatus {
-                installed: false,
-                needs_reinstall: false,
-                spec: None,
-                version: None,
-            })
-        }
-        Some(entry) => {
-            let spec = entry
-                .get("spec")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let version = entry
-                .get("version")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-
-            let correct_spec = spec.as_deref() == Some("@soimy/dingtalk");
-            if correct_spec {
-                info!("[钉钉插件] ✓ 钉钉插件已安装，spec={:?}", spec);
-                Ok(DingTalkPluginStatus {
-                    installed: true,
-                    needs_reinstall: false,
-                    spec,
-                    version,
-                })
-            } else {
-                info!("[钉钉插件] 插件规格不匹配 spec={:?}，需要重新安装", spec);
-                Ok(DingTalkPluginStatus {
-                    installed: false,
-                    needs_reinstall: true,
-                    spec,
-                    version,
-                })
-            }
-        }
+    if !package_json_path.exists() {
+        info!("[钉钉插件] package.json 不存在，需要安装");
+        return Ok(DingTalkPluginStatus {
+            installed: false,
+            needs_reinstall: false,
+            spec: None,
+            version: None,
+        });
     }
+
+    // 已安装：从 package.json 读 version，可选从 config 读 spec/needs_reinstall
+    let version = std::fs::read_to_string(&package_json_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v.get("version").and_then(|v| v.as_str()).map(|s| s.to_string()));
+
+    let config = load_openclaw_config_json().unwrap_or(json!({}));
+    let installs_dingtalk = config.pointer("/plugins/installs/dingtalk");
+    let spec = installs_dingtalk
+        .and_then(|e| e.get("spec").and_then(|v| v.as_str()).map(|s| s.to_string()));
+    let needs_reinstall = spec.as_deref() != Some("@soimy/dingtalk");
+
+    info!(
+        "[钉钉插件] ✓ 钉钉插件已安装 version={:?} spec={:?}",
+        version, spec
+    );
+    Ok(DingTalkPluginStatus {
+        installed: true,
+        needs_reinstall,
+        spec,
+        version,
+    })
 }
 
 /// Install (or reinstall) the dingtalk plugin via openclaw CLI
@@ -1636,20 +1631,48 @@ pub async fn check_openclaw_dingtalk_plugin() -> Result<DingTalkPluginStatus, St
 pub async fn install_openclaw_dingtalk_plugin() -> Result<String, String> {
     info!("[钉钉插件] 开始安装/重装钉钉插件...");
 
-    let status = check_openclaw_dingtalk_plugin().await?;
+    // 1. 先设置 npm registry 加速
+    info!("[钉钉插件] 设置 npm registry 为淘宝镜像...");
+    let npm_config_output = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("npm")
+            .args(["config", "set", "registry", "https://registry.npmmirror.com"])
+            .env("PATH", get_extended_path())
+            .output()
+            .map_err(|e| format!("设置 npm registry 失败: {}", e))
+    })
+    .await
+    .map_err(|e| format!("npm config 任务执行失败: {}", e))?;
 
-    if status.needs_reinstall {
-        info!("[钉钉插件] 规格不匹配，先删除 ~/.openclaw/extensions/dingtalk");
-        if let Some(home) = dirs::home_dir() {
-            let ext_dir = home.join(".openclaw").join("extensions").join("dingtalk");
-            if ext_dir.exists() {
-                std::fs::remove_dir_all(&ext_dir)
-                    .map_err(|e| format!("删除旧钉钉插件目录失败: {}", e))?;
-                info!("[钉钉插件] ✓ 已删除旧目录: {}", ext_dir.display());
+    match npm_config_output {
+        Ok(output) => {
+            if output.status.success() {
+                info!("[钉钉插件] ✓ npm registry 设置成功");
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                warn!("[钉钉插件] 设置 npm registry 警告: {}", stderr.trim());
             }
+        }
+        Err(e) => {
+            warn!("[钉钉插件] 设置 npm registry 失败（继续执行）: {}", e);
         }
     }
 
+    // 2. 无条件删除目录 ~/.openclaw/extensions/dingtalk
+    info!("[钉钉插件] 删除 ~/.openclaw/extensions/dingtalk 目录...");
+    if let Some(home) = dirs::home_dir() {
+        let ext_dir = home.join(".openclaw").join("extensions").join("dingtalk");
+        if ext_dir.exists() {
+            match std::fs::remove_dir_all(&ext_dir) {
+                Ok(_) => info!("[钉钉插件] ✓ 已删除目录: {}", ext_dir.display()),
+                Err(e) => warn!("[钉钉插件] 删除目录警告（继续执行）: {}", e),
+            }
+        } else {
+            info!("[钉钉插件] 目录不存在，跳过删除: {}", ext_dir.display());
+        }
+    }
+
+    // 3. 执行 openclaw plugins install @soimy/dingtalk
+    info!("[钉钉插件] 执行安装命令...");
     let output = tokio::task::spawn_blocking(move || {
         std::process::Command::new(find_openclaw_bin())
             .args(["plugins", "install", "@soimy/dingtalk"])

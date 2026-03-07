@@ -1720,6 +1720,9 @@ export function ProviderForm({
                   }
                   placeholder={t("opencode.providerKeyPlaceholder")}
                   disabled={isEditMode}
+                  inputMode="verbatim"
+                  lang="en"
+                  autoComplete="off"
                   className={
                     (existingOpencodeKeys.includes(
                       opencodeForm.opencodeProviderKey,
@@ -1779,6 +1782,9 @@ export function ProviderForm({
                   }
                   placeholder={t("openclaw.providerKeyPlaceholder")}
                   disabled={isEditMode}
+                  inputMode="verbatim"
+                  lang="en"
+                  autoComplete="off"
                   className={
                     (openclawForm.existingOpenclawKeys.includes(
                       openclawForm.openclawProviderKey,
