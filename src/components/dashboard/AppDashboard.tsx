@@ -174,7 +174,7 @@ export function AppDashboard({
 
   const startOpenClawService = useStartOpenClawService();
 
-  const { data: toolVersion, refetch: refetchToolVersion } = useToolVersionQuery(
+  const { data: toolVersion, refetch: refetchToolVersion, isLoading: isToolVersionLoading } = useToolVersionQuery(
     activeApp === "claude" ? "claude" :
     activeApp === "codex" ? "codex" :
     activeApp === "gemini" ? "gemini" :
@@ -191,8 +191,9 @@ export function AppDashboard({
       : activeApp === "qwen" && cliEnv
       ? cliEnv.has_cli || isCliInstalled
       : isCliInstalled;
-  // 联合 toolVersion 加载状态：只要任意一个源返回数据就可结束骨架屏
-  const isCheckingCli = cliCheckLoading && !toolVersion;
+  // 只有当 toolVersion 还在加载中（且 cliEnv 也没有结果）时才显示骨架屏
+  // toolVersion 查询完成后（返回 null 或有值），可以立即渲染，不必等 cliEnv
+  const isCheckingCli = isToolVersionLoading && !cliEnv;
   const providerReady = Object.keys(providers).length > 0;
 
   const handleInstall = useCallback(async () => {
@@ -364,7 +365,11 @@ export function AppDashboard({
   }, [activeApp, refetchToolVersion]);
 
   useEffect(() => {
+    // 切换 app 时立即重置所有本地状态，避免残留旧数据导致闪屏
     setCliCheckLoading(true);
+    setCliEnv(null);
+    setCliInstalledLocally(false);
+    setCliUninstalledLocally(false);
     // Only check for Node.js-based CLI tools
     if (!["claude", "codex", "gemini", "opencode", "qwen", "openclaw"].includes(activeApp)) {
       setCliCheckLoading(false);
@@ -389,10 +394,6 @@ export function AppDashboard({
     return () => { active = false; };
   }, [activeApp]);
 
-  useEffect(() => {
-    setCliUninstalledLocally(false);
-  }, [activeApp]);
-
   const capabilityCards = useMemo(() => getCapabilityCards(activeApp), [activeApp]);
   
   const cliVersion = toolVersion?.version || cliEnv?.cli_version;
@@ -401,7 +402,7 @@ export function AppDashboard({
   if (isCheckingCli && !effectiveCliInstalled) {
     return (
       <div className="px-6 py-6 min-h-full space-y-5">
-        <div className="rounded-xl border border-border-subtle bg-bg-card p-5 animate-pulse">
+        <div className="rounded-xl border border-border-subtle bg-bg-secondary p-5 animate-pulse">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-bg-tertiary" />
             <div className="flex-1 space-y-2">
@@ -412,6 +413,13 @@ export function AppDashboard({
           <div className="grid grid-cols-2 gap-4">
             <div className="h-20 bg-bg-tertiary rounded-xl" />
             <div className="h-20 bg-bg-tertiary rounded-xl" />
+          </div>
+        </div>
+        <div className="rounded-xl border border-border-subtle bg-bg-secondary p-5 animate-pulse">
+          <div className="space-y-3">
+            <div className="h-4 bg-bg-tertiary rounded w-40" />
+            <div className="h-10 bg-bg-tertiary rounded-lg" />
+            <div className="h-10 bg-bg-tertiary rounded-lg w-3/4" />
           </div>
         </div>
       </div>
@@ -458,8 +466,8 @@ export function AppDashboard({
         </div>
       )}
 
-      {/* ===== CLI 安装引导（仅在 CLI 检测完成后且确认未安装时显示）===== */}
-      {!cliCheckLoading && !effectiveCliInstalled && (
+      {/* ===== CLI 安装引导（toolVersion 确认未安装时即可显示，无需等待 cliEnv）===== */}
+      {!isToolVersionLoading && !effectiveCliInstalled && (
         <>
           <div className="rounded-xl border-2 border-dashed border-accent/30 bg-accent/5 p-5">
             <div className="flex items-center gap-4 mb-4">
