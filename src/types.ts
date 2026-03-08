@@ -536,5 +536,34 @@ export interface OpenClawToolsConfig {
   profile?: string;
   allow?: string[];
   deny?: string[];
+  sessions?: { visibility?: "all" | "own" | "none"; [key: string]: unknown };
   [key: string]: unknown; // preserve unknown fields
+}
+
+// ============================================================================
+// OpenClaw Gateway 配置（v3.x+）
+// ============================================================================
+
+// OpenClaw Gateway 认证配置
+export interface OpenClawGatewayAuth {
+  mode?: "token" | "password";
+  token?: string;
+  password?: string;
+  [key: string]: unknown;
+}
+
+// OpenClaw Tailscale 配置
+export interface OpenClawGatewayTailscale {
+  address?: string;
+  [key: string]: unknown;
+}
+
+// OpenClaw Gateway 配置（openclaw.json 的 gateway 节点）
+export interface OpenClawGatewayConfig {
+  port?: number;
+  bind?: "loopback" | "lan" | "all";
+  mode?: "local" | "remote";
+  auth?: OpenClawGatewayAuth;
+  tailscale?: OpenClawGatewayTailscale;
+  [key: string]: unknown;
 }

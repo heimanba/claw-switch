@@ -14,6 +14,7 @@ import {
   Moon,
   Sun,
   Bot,
+  Network,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
@@ -49,7 +50,7 @@ type View =
   | "workspace"
   | "openclawEnv"
   | "openclawTools"
-  | "openclawAgents"
+  | "openclawGateway"
   | "openclawTesting"
   | "openclawChannels"
   | "openclawLogs";
@@ -122,7 +123,7 @@ export function Sidebar({
             { id: 'providers', label: t('openclaw.providers.title', { defaultValue: '模型配置' }), icon: Users },
             { id: 'openclawTools', label: t('openclaw.tools.title', { defaultValue: '工具权限' }), icon: Shield },
             { id: 'openclawEnv', label: t('openclaw.env.title', { defaultValue: '环境变量' }), icon: KeyRound },
-            { id: 'openclawAgents', label: t('openclaw.agents.defaultConfig', { defaultValue: 'Agent 管理' }), icon: Settings },
+            { id: 'openclawGateway', label: t('openclaw.gateway.title', { defaultValue: 'Gateway 配置' }), icon: Network },
           ],
         },
         {

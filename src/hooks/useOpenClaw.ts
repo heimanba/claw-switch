@@ -6,6 +6,7 @@ import type {
   OpenClawEnvConfig,
   OpenClawToolsConfig,
   OpenClawAgentsDefaults,
+  OpenClawGatewayConfig,
 } from "@/types";
 /**
  * Centralized query keys for all OpenClaw-related queries.
@@ -22,6 +23,7 @@ export const openclawKeys = {
   agents: ["openclaw", "agents"] as const,
   serviceStatus: ["openclaw", "serviceStatus"] as const,
   channels: ["openclaw", "channels"] as const,
+  gateway: ["openclaw", "gateway"] as const,
 };
 
 // ============================================================
@@ -338,6 +340,44 @@ export function useBackupAgent() {
     },
     onError: (error) => {
       agentsLogger.error("❌ 备份 Agent 失败", error);
+    },
+  });
+}
+
+// ============================================================
+// Gateway Configuration Hooks
+// ============================================================
+
+/**
+ * Query gateway config section of openclaw.json.
+ */
+export function useOpenClawGateway() {
+  return useQuery({
+    queryKey: openclawKeys.gateway,
+    queryFn: () => openclawApi.getGatewayConfig(),
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Save gateway config. Invalidates gateway query on success.
+ * After saving, automatically attempts to reload the gateway service.
+ * Toast notifications are handled by the component.
+ */
+export function useSaveOpenClawGateway() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (gateway: OpenClawGatewayConfig) => {
+      await openclawApi.setGatewayConfig(gateway);
+      // Best-effort reload — ignore errors (caller shows toast)
+      try {
+        await openclawApi.reloadGateway();
+      } catch (_) {
+        // reload not supported or failed — caller handles fallback
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: openclawKeys.gateway });
     },
   });
 }

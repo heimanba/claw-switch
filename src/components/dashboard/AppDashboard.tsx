@@ -82,7 +82,8 @@ export type DashboardQuickAction =
   | "workspace"
   | "openclawEnv"
   | "openclawTools"
-  | "openclawAgents"
+  | "openclawGateway"
+  | "agents"
   | "openclawTesting"
   | "openclawChannels"
   | "providers";
@@ -109,7 +110,7 @@ function getCapabilityCards(appId: AppId): CapabilityCardDef[] {
       { id: "workspace", icon: FolderOpen },
       { id: "openclawEnv", icon: KeyRound },
       { id: "openclawTools", icon: Shield },
-      { id: "openclawAgents", icon: Cpu },
+      { id: "agents", icon: Cpu },
       { id: "openclawTesting", icon: FlaskConical },
       { id: "openclawChannels", icon: MessageCircle },
       { id: "sessions", icon: History },
@@ -1018,6 +1019,13 @@ export function AppDashboard({
                       className="text-xs text-accent hover:text-accent-hover hover:underline"
                     >
                       {t("overview.openclaw.managementTools.toolManagement")}
+                    </button>
+                    <span className="text-xs text-text-tertiary">·</span>
+                    <button
+                      onClick={() => onOpenAction?.("openclawGateway")}
+                      className="text-xs text-accent hover:text-accent-hover hover:underline"
+                    >
+                      {t("overview.openclaw.managementTools.gatewayConfig", { defaultValue: "Gateway 配置" })}
                     </button>
                   </div>
                 </div>

@@ -16,7 +16,7 @@ type View =
   | "workspace"
   | "openclawEnv"
   | "openclawTools"
-  | "openclawAgents"
+  | "openclawGateway"
   | "openclawTesting"
   | "openclawChannels"
   | "openclawLogs";
@@ -63,8 +63,6 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
         return t('openclaw.env.title', { defaultValue: '环境变量' });
       case 'openclawTools':
         return t('openclaw.tools.title', { defaultValue: '核心工具' });
-      case 'openclawAgents':
-        return t('openclaw.agents.title', { defaultValue: '智能体配置' });
       case 'openclawTesting':
         return t('openclaw.testing.title', { defaultValue: '系统体检' });
       case 'openclawChannels':
@@ -96,8 +94,6 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
         return t('openclaw.env.description', { defaultValue: '配置环境变量和密钥' });
       case 'openclawTools':
         return t('openclaw.tools.description', { defaultValue: '配置可用工具和权限' });
-      case 'openclawAgents':
-        return t('openclaw.agents.description', { defaultValue: '配置智能体默认设置' });
       case 'openclawTesting':
         return t('openclaw.testing.subtitle', { defaultValue: '系统诊断与问题排查' });
       case 'openclawChannels':

@@ -6,6 +6,7 @@ import type {
   OpenClawEnvConfig,
   OpenClawToolsConfig,
   OpenClawAgentInfo,
+  OpenClawGatewayConfig,
 } from "@/types";
 
 /**
@@ -297,5 +298,30 @@ export const openclawApi = {
    */
   async clearLog(path: string): Promise<void> {
     return await invoke("clear_openclaw_log", { path });
+  },
+
+  // ============================================================
+  // Gateway Configuration
+  // ============================================================
+
+  /**
+   * 获取 gateway 配置（gateway section of openclaw.json）
+   */
+  async getGatewayConfig(): Promise<OpenClawGatewayConfig> {
+    return await invoke("get_openclaw_gateway");
+  },
+
+  /**
+   * 保存 gateway 配置（gateway section of openclaw.json）
+   */
+  async setGatewayConfig(gateway: OpenClawGatewayConfig): Promise<void> {
+    return await invoke("set_openclaw_gateway", { gateway });
+  },
+
+  /**
+   * 重载 Gateway 服务（热应用配置，不需要完整重启）
+   */
+  async reloadGateway(): Promise<string> {
+    return await invoke("reload_openclaw_gateway");
   },
 };

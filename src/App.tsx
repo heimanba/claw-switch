@@ -63,7 +63,7 @@ import {
 import WorkspaceFilesPanel from "@/components/workspace/WorkspaceFilesPanel";
 import EnvPanel from "@/components/openclaw/EnvPanel";
 import ToolsPanel from "@/components/openclaw/ToolsPanel";
-import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
+import GatewayPanel from "@/components/openclaw/GatewayPanel";
 import TestingPanel from "@/components/openclaw/TestingPanel";
 import ChannelsPanel from "@/components/openclaw/ChannelsPanel";
 import LogsPanel from "@/components/openclaw/LogsPanel";
@@ -82,7 +82,7 @@ type View =
   | "workspace"
   | "openclawEnv"
   | "openclawTools"
-  | "openclawAgents"
+  | "openclawGateway"
   | "openclawTesting"
   | "openclawChannels"
   | "openclawLogs";
@@ -128,7 +128,7 @@ const VALID_VIEWS: View[] = [
   "workspace",
   "openclawEnv",
   "openclawTools",
-  "openclawAgents",
+  "openclawGateway",
   "openclawTesting",
   "openclawChannels",
 ];
@@ -137,7 +137,7 @@ const OPENCLAW_ONLY_VIEWS = new Set<View>([
   "workspace",
   "openclawEnv",
   "openclawTools",
-  "openclawAgents",
+  "openclawGateway",
   "agents",
   "openclawTesting",
   "openclawChannels",
@@ -275,7 +275,7 @@ function App() {
   } = useProviderActions(activeApp, {
     onNavigateToAgents:
       activeApp === "openclaw"
-        ? () => { setCurrentView("openclawAgents"); }
+        ? () => { setCurrentView("agents"); }
         : undefined,
   });
 
@@ -755,8 +755,11 @@ function App() {
       case "openclawTools":
         setCurrentView("openclawTools");
         break;
-      case "openclawAgents":
-        setCurrentView("openclawAgents");
+      case "openclawGateway":
+        setCurrentView("openclawGateway");
+        break;
+      case "agents":
+        setCurrentView("agents");
         break;
       case "openclawTesting":
         setCurrentView("openclawTesting");
@@ -878,10 +881,10 @@ function App() {
               <ToolsPanel />
             </div>
           );
-        case "openclawAgents":
+        case "openclawGateway":
           return (
             <div className="flex-1 min-h-0 overflow-y-auto">
-              <AgentsDefaultsPanel />
+              <GatewayPanel />
             </div>
           );
         case "openclawTesting":
@@ -969,7 +972,7 @@ function App() {
                     }
                     onNavigateToAgents={
                       activeApp === "openclaw"
-                        ? () => { setCurrentView("openclawAgents"); }
+                        ? () => { setCurrentView("agents"); }
                         : undefined
                     }
                     embedOnboardingWhenEmpty={true}

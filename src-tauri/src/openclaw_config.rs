@@ -939,6 +939,18 @@ pub fn set_env_config(env: &OpenClawEnvConfig) -> Result<(), AppError> {
 // Tools Configuration
 // ============================================================================
 
+/// OpenClaw tools sessions visibility config
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenClawToolsSessionsConfig {
+    /// Session visibility: "all" | "own" | "none"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+
+    /// Other custom fields (preserve unknown fields)
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
 /// OpenClaw tools configuration (tools section of openclaw.json)
 ///
 /// Controls tool permissions with profile-based allow/deny lists.
@@ -956,9 +968,108 @@ pub struct OpenClawToolsConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deny: Vec<String>,
 
+    /// Sessions visibility config
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sessions: Option<OpenClawToolsSessionsConfig>,
+
     /// Other custom fields (preserve unknown fields)
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
+}
+
+// ============================================================================
+// Gateway Configuration
+// ============================================================================
+
+/// OpenClaw gateway auth configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenClawGatewayAuth {
+    /// Auth mode: "token" | "password"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+
+    /// API token for token-based auth
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+
+    /// Password for password-based auth
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+
+    /// Other custom fields (preserve unknown fields)
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+/// OpenClaw Tailscale configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenClawGatewayTailscale {
+    /// Tailscale address (e.g. "100.x.x.x:18789")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+
+    /// Other custom fields (preserve unknown fields)
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+/// OpenClaw gateway configuration (gateway section of openclaw.json)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenClawGatewayConfig {
+    /// Service port (default 18789)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+
+    /// Bind mode: "loopback" | "lan" | "all"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bind: Option<String>,
+
+    /// Running mode: "local" | "remote"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+
+    /// Authentication configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth: Option<OpenClawGatewayAuth>,
+
+    /// Tailscale configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tailscale: Option<OpenClawGatewayTailscale>,
+
+    /// Other custom fields (preserve unknown fields)
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+/// Read the gateway config section
+pub fn get_gateway_config() -> Result<OpenClawGatewayConfig, AppError> {
+    let config = read_openclaw_config()?;
+
+    let Some(gateway_value) = config.get("gateway") else {
+        return Ok(OpenClawGatewayConfig {
+            port: None,
+            bind: None,
+            mode: None,
+            auth: None,
+            tailscale: None,
+            extra: HashMap::new(),
+        });
+    };
+
+    serde_json::from_value(gateway_value.clone())
+        .map_err(|e| AppError::Config(format!("Failed to parse gateway config: {e}")))
+}
+
+/// Write the gateway config section
+pub fn set_gateway_config(gateway: &OpenClawGatewayConfig) -> Result<(), AppError> {
+    let mut config = read_openclaw_config()?;
+
+    let value =
+        serde_json::to_value(gateway).map_err(|e| AppError::JsonSerialize { source: e })?;
+
+    config["gateway"] = value;
+
+    write_openclaw_config(&config)
 }
 
 /// Read the tools config section
@@ -970,6 +1081,7 @@ pub fn get_tools_config() -> Result<OpenClawToolsConfig, AppError> {
             profile: None,
             allow: Vec::new(),
             deny: Vec::new(),
+            sessions: None,
             extra: HashMap::new(),
         });
     };

@@ -310,6 +310,52 @@ pub fn set_openclaw_tools(tools: openclaw_config::OpenClawToolsConfig) -> Result
 }
 
 // ============================================================================
+// Gateway Configuration Commands
+// ============================================================================
+
+/// Get OpenClaw gateway config (gateway section of openclaw.json)
+#[tauri::command]
+pub fn get_openclaw_gateway() -> Result<openclaw_config::OpenClawGatewayConfig, String> {
+    openclaw_config::get_gateway_config().map_err(|e| e.to_string())
+}
+
+/// Set OpenClaw gateway config (gateway section of openclaw.json)
+#[tauri::command]
+pub fn set_openclaw_gateway(
+    gateway: openclaw_config::OpenClawGatewayConfig,
+) -> Result<(), String> {
+    openclaw_config::set_gateway_config(&gateway).map_err(|e| e.to_string())
+}
+
+/// Reload the OpenClaw gateway service (applies config changes without full restart).
+/// Tries `openclaw gateway reload` first; falls back to restart if reload is not supported.
+#[tauri::command]
+pub async fn reload_openclaw_gateway() -> Result<String, String> {
+    info!("[OpenClaw] 执行 openclaw gateway reload ...");
+    tokio::task::spawn_blocking(|| {
+        let output = std::process::Command::new(find_openclaw_bin())
+            .args(["gateway", "reload"])
+            .env("PATH", get_extended_path())
+            .output()
+            .map_err(|e| format!("执行 openclaw gateway reload 失败: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        if output.status.success() {
+            Ok(if stdout.trim().is_empty() {
+                "Gateway 已重载".to_string()
+            } else {
+                stdout.trim().to_string()
+            })
+        } else {
+            // reload not supported — return error so caller can fall back to restart
+            Err(format!("gateway reload 失败: {}", stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ============================================================================
 // Service Status Commands
 // ============================================================================
 
