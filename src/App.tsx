@@ -29,7 +29,8 @@ import {
 import { getDefaultVisibleApps } from "@/config/appConfig";
 import { checkAllEnvConflicts, checkEnvConflicts } from "@/lib/api/env";
 import { useProviderActions } from "@/hooks/useProviderActions";
-import { openclawKeys } from "@/hooks/useOpenClaw";
+import { openclawKeys, useOpenClawServiceStatus } from "@/hooks/useOpenClaw";
+import { openclawApi } from "@/lib/api/openclaw";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { useLastValidValue } from "@/hooks/useLastValidValue";
 import { extractErrorMessage } from "@/utils/errorUtils";
@@ -67,6 +68,7 @@ import GatewayPanel from "@/components/openclaw/GatewayPanel";
 import TestingPanel from "@/components/openclaw/TestingPanel";
 import ChannelsPanel from "@/components/openclaw/ChannelsPanel";
 import LogsPanel from "@/components/openclaw/LogsPanel";
+import { ChatPage } from "@/components/chat/ChatPage";
 import { appLogger } from "@/lib/logger";
 
 type View =
@@ -85,7 +87,8 @@ type View =
   | "openclawGateway"
   | "openclawTesting"
   | "openclawChannels"
-  | "openclawLogs";
+  | "openclawLogs"
+  | "chat";
 
 interface WebDavSyncStatusUpdatedPayload {
   source?: string;
@@ -131,6 +134,7 @@ const VALID_VIEWS: View[] = [
   "openclawGateway",
   "openclawTesting",
   "openclawChannels",
+  "chat",
 ];
 
 const OPENCLAW_ONLY_VIEWS = new Set<View>([
@@ -141,6 +145,7 @@ const OPENCLAW_ONLY_VIEWS = new Set<View>([
   "agents",
   "openclawTesting",
   "openclawChannels",
+  "chat",
 ]);
 
 const SESSION_SUPPORTED_APPS = new Set<AppId>([
@@ -252,6 +257,31 @@ function App() {
     status: proxyStatus,
   } = useProxyStatus();
   const isCurrentAppTakeoverActive = takeoverStatus?.[activeApp] || false;
+
+  // OpenClaw Gateway 状态检测（仅当活动 app 为 openclaw 时轮询）
+  const isOpenclaw = activeApp === "openclaw";
+  const { data: isGatewayRunning, refetch: refetchGatewayStatus } = useOpenClawServiceStatus(isOpenclaw);
+  const [gatewayStarting, setGatewayStarting] = useState(false);
+
+  const handleStartGateway = async () => {
+    if (gatewayStarting) return;
+    setGatewayStarting(true);
+    try {
+      const detail = await openclawApi.getServiceDetail();
+      if (detail.gateway_installed === false) {
+        await openclawApi.installGateway();
+      }
+      await openclawApi.startService();
+      await refetchGatewayStatus();
+      toast.success(t("openclaw.testing.gatewayStarted", { defaultValue: "网关服务已启动" }));
+    } catch (e) {
+      toast.error(t("openclaw.testing.gatewayStartFailed", { defaultValue: "启动网关失败" }), {
+        description: extractErrorMessage(e) || undefined,
+      });
+    } finally {
+      setGatewayStarting(false);
+    }
+  };
   const activeProviderId = useMemo(() => {
     const target = proxyStatus?.active_targets?.find(
       (t) => t.app_type === activeApp,
@@ -917,6 +947,12 @@ function App() {
               <LogsPanel />
             </div>
           );
+        case "chat":
+          return (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <ChatPage />
+            </div>
+          );
         default:
           return (
             <div className="flex-1 min-h-0 overflow-y-auto px-6">
@@ -1182,6 +1218,24 @@ function App() {
         <Header currentView={currentView} activeApp={activeApp}>
           {renderHeaderActions()}
         </Header>
+
+        {/* Gateway 未启动全局警告横幅 */}
+        {isOpenclaw && isGatewayRunning === false && (
+          <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 bg-amber-600 dark:bg-amber-700 text-white text-sm">
+            <span className="font-medium">
+              {t("openclaw.gateway.notRunningBanner", { defaultValue: "Gateway 未启动，部分功能不可用" })}
+            </span>
+            <button
+              onClick={() => void handleStartGateway()}
+              disabled={gatewayStarting}
+              className="ml-4 px-3 py-1 rounded bg-white/20 hover:bg-white/30 font-medium text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              {gatewayStarting
+                ? t("overview.openclaw.serviceStarting", { defaultValue: "启动中…" })
+                : t("openclaw.gateway.startButton", { defaultValue: "启动 Gateway" })}
+            </button>
+          </div>
+        )}
 
         {/* 主内容区 */}
         <main className="flex-1 min-h-0 flex flex-col">

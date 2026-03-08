@@ -1836,6 +1836,8 @@
       "loadFailed": "读取 Agents 配置失败"
     },
     "gateway": {
+      "notRunningBanner": "Gateway 未启动，部分功能不可用",
+      "startButton": "启动 Gateway",
       "title": "Gateway 配置",
       "description": "配置 AI 模型统一入口的服务端口、访问权限和认证方式",
       "port": "服务端口",

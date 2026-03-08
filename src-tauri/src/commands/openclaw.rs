@@ -2015,25 +2015,28 @@ pub struct LogFileInfo {
 }
 
 /// List available OpenClaw log files
+/// Returns the three main log files in fixed order:
+///   1. gateway.log       - Gateway main log
+///   2. gateway.err.log   - Gateway error log
+///   3. config-audit.jsonl - Audit log
 #[tauri::command]
 pub async fn list_openclaw_logs() -> Result<Vec<LogFileInfo>, String> {
     let logs_dir = openclaw_config::get_openclaw_dir().join("logs");
-    
-    if !logs_dir.exists() {
-        return Ok(vec![]);
-    }
+
+    // Fixed log files in display order
+    let candidates = vec![
+        "gateway.log",
+        "gateway.err.log",
+        "config-audit.jsonl",
+    ];
 
     let mut logs = Vec::new();
-    
-    if let Ok(entries) = std::fs::read_dir(&logs_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("log") {
-                if let Ok(metadata) = entry.metadata() {
-                    let name = path.file_name()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("unknown.log")
-                        .to_string();
+
+    for filename in candidates {
+        let path = logs_dir.join(filename);
+        let (size, modified) = if path.exists() {
+            match std::fs::metadata(&path) {
+                Ok(metadata) => {
                     let size = metadata.len();
                     let modified = metadata.modified()
                         .ok()
@@ -2044,49 +2047,67 @@ pub async fn list_openclaw_logs() -> Result<Vec<LogFileInfo>, String> {
                                 .unwrap_or_else(|| chrono::DateTime::UNIX_EPOCH);
                             dt.format("%Y-%m-%d %H:%M:%S").to_string()
                         });
-                    
-                    logs.push(LogFileInfo {
-                        name,
-                        path: path.to_string_lossy().to_string(),
-                        size,
-                        modified,
-                    });
+                    (size, modified)
                 }
+                Err(_) => (0, None),
             }
-        }
+        } else {
+            (0, None)
+        };
+
+        logs.push(LogFileInfo {
+            name: filename.to_string(),
+            path: path.to_string_lossy().to_string(),
+            size,
+            modified,
+        });
     }
-    
-    // Sort by modification time (newest first)
-    logs.sort_by(|a, b| b.modified.cmp(&a.modified));
-    
+
     Ok(logs)
 }
 
 /// Read log file content with optional line limit
 #[tauri::command]
 pub async fn read_openclaw_log(path: String, limit: Option<usize>) -> Result<String, String> {
-    let path = std::path::Path::new(&path);
-    
-    // Security check: ensure the path is within the openclaw logs directory
     let logs_dir = openclaw_config::get_openclaw_dir().join("logs");
-    let canonical_path = path.canonicalize()
-        .map_err(|e| format!("无法访问日志文件: {}", e))?;
-    let canonical_logs_dir = logs_dir.canonicalize()
-        .unwrap_or_else(|_| logs_dir.clone());
-    
-    if !canonical_path.starts_with(&canonical_logs_dir) {
-        return Err("非法的日志文件路径".to_string());
+
+    // Normalize both paths to absolute strings for comparison.
+    // We avoid canonicalize() because the logs directory may lack execute permission
+    // (chmod r--) which would cause canonicalize to fail even though the path is valid.
+    let abs_input = if std::path::Path::new(&path).is_absolute() {
+        std::path::PathBuf::from(&path)
+    } else {
+        std::env::current_dir().unwrap_or_default().join(&path)
+    };
+
+    // Resolve the expected logs dir to an absolute path without canonicalize
+    let abs_logs_dir = if logs_dir.is_absolute() {
+        logs_dir.clone()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(&logs_dir)
+    };
+
+    // Security check: input path must be a direct child of the logs directory
+    let parent = abs_input.parent().unwrap_or(&abs_input);
+    if parent != abs_logs_dir {
+        // Last resort: try canonicalize (may work if permissions allow)
+        let canonical_logs = logs_dir.canonicalize().unwrap_or(abs_logs_dir);
+        let canonical_parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+        if !canonical_parent.starts_with(&canonical_logs) {
+            return Err("非法的日志文件路径".to_string());
+        }
     }
-    
-    if !canonical_path.exists() {
+
+    // File doesn't exist → return empty string (not an error)
+    if !abs_input.exists() {
         return Ok(String::new());
     }
-    
+
     // Read file content
-    let content = std::fs::read_to_string(&canonical_path)
+    let content = std::fs::read_to_string(&abs_input)
         .map_err(|e| format!("读取日志文件失败: {}", e))?;
-    
-    // Apply line limit if specified
+
+    // Apply line limit if specified (tail semantics – last N lines)
     if let Some(max_lines) = limit {
         let lines: Vec<&str> = content.lines().collect();
         if lines.len() > max_lines {
@@ -2094,32 +2115,47 @@ pub async fn read_openclaw_log(path: String, limit: Option<usize>) -> Result<Str
             return Ok(lines[start..].join("\n"));
         }
     }
-    
+
     Ok(content)
 }
 
 /// Clear (truncate) a log file
 #[tauri::command]
 pub async fn clear_openclaw_log(path: String) -> Result<(), String> {
-    let path = std::path::Path::new(&path);
-    
-    // Security check: ensure the path is within the openclaw logs directory
     let logs_dir = openclaw_config::get_openclaw_dir().join("logs");
-    let canonical_path = path.canonicalize()
-        .map_err(|e| format!("无法访问日志文件: {}", e))?;
-    let canonical_logs_dir = logs_dir.canonicalize()
-        .unwrap_or_else(|_| logs_dir.clone());
-    
-    if !canonical_path.starts_with(&canonical_logs_dir) {
-        return Err("非法的日志文件路径".to_string());
+
+    let abs_input = if std::path::Path::new(&path).is_absolute() {
+        std::path::PathBuf::from(&path)
+    } else {
+        std::env::current_dir().unwrap_or_default().join(&path)
+    };
+
+    let abs_logs_dir = if logs_dir.is_absolute() {
+        logs_dir.clone()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(&logs_dir)
+    };
+
+    let parent = abs_input.parent().unwrap_or(&abs_input);
+    if parent != abs_logs_dir {
+        let canonical_logs = logs_dir.canonicalize().unwrap_or(abs_logs_dir);
+        let canonical_parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+        if !canonical_parent.starts_with(&canonical_logs) {
+            return Err("非法的日志文件路径".to_string());
+        }
     }
-    
+
+    // File doesn't exist → nothing to clear
+    if !abs_input.exists() {
+        return Ok(());
+    }
+
     // Truncate the file
     std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
-        .open(&canonical_path)
+        .open(&abs_input)
         .map_err(|e| format!("清空日志文件失败: {}", e))?;
-    
+
     Ok(())
 }

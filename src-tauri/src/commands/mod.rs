@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 mod config;
+mod gateway_auth;
 mod installer;
 mod cli_watcher;
 mod deeplink;
@@ -26,6 +27,7 @@ mod webdav_sync;
 mod workspace;
 
 pub use config::*;
+pub use gateway_auth::*;
 pub use installer::*;
 pub use cli_watcher::*;
 pub use deeplink::*;

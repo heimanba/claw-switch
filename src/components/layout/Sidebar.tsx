@@ -15,6 +15,7 @@ import {
   Sun,
   Bot,
   Network,
+  MessagesSquare,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
@@ -53,7 +54,8 @@ type View =
   | "openclawGateway"
   | "openclawTesting"
   | "openclawChannels"
-  | "openclawLogs";
+  | "openclawLogs"
+  | "chat";
 
 interface SidebarProps {
   currentView: View;
@@ -118,33 +120,33 @@ export function Sidebar({
           ],
         },
         {
-          label: t('sidebar.group.config', { defaultValue: '配置' }),
+          // 无标签，高频入口紧跟概览
           items: [
-            { id: 'providers', label: t('openclaw.providers.title', { defaultValue: '模型配置' }), icon: Users },
-            { id: 'openclawTools', label: t('openclaw.tools.title', { defaultValue: '工具权限' }), icon: Shield },
-            { id: 'openclawEnv', label: t('openclaw.env.title', { defaultValue: '环境变量' }), icon: KeyRound },
-            { id: 'openclawGateway', label: t('openclaw.gateway.title', { defaultValue: 'Gateway 配置' }), icon: Network },
+            { id: 'chat', label: t('chat.title', { defaultValue: '聊天' }), icon: MessagesSquare },
+            { id: 'sessions', label: t('sessionManager.title', { defaultValue: '会话管理' }), icon: History },
           ],
         },
         {
-          label: t('sidebar.group.manage', { defaultValue: '管理' }),
+          label: t('sidebar.group.config', { defaultValue: '配置' }),
           items: [
-            { id: 'agents', label: t('agentsPanel.menuTitle', { defaultValue: 'Agent 管理' }), icon: Bot },
-            { id: 'workspace', label: t('workspace.title', { defaultValue: '文件管理' }), icon: FolderOpen },
-            { id: 'sessions', label: t('sessionManager.title', { defaultValue: '会话管理' }), icon: History },
+            { id: 'providers', label: t('openclaw.providers.title', { defaultValue: '模型配置' }), icon: Users },
+            { id: 'openclawGateway', label: t('openclaw.gateway.title', { defaultValue: 'Gateway 配置' }), icon: Network },
+            { id: 'openclawChannels', label: t('openclaw.channels.title', { defaultValue: '消息渠道' }), icon: MessageCircle },
+            { id: 'openclawTools', label: t('openclaw.tools.title', { defaultValue: '工具权限' }), icon: Shield },
+            { id: 'openclawEnv', label: t('openclaw.env.title', { defaultValue: '环境变量' }), icon: KeyRound },
           ],
         },
         {
           label: t('sidebar.group.ops', { defaultValue: '运维' }),
           items: [
-            { id: 'openclawChannels', label: t('openclaw.channels.title', { defaultValue: '消息渠道' }), icon: MessageCircle },
+            { id: 'agents', label: t('agentsPanel.menuTitle', { defaultValue: 'Agent 管理' }), icon: Bot },
             { id: 'openclawTesting', label: t('openclaw.testing.title', { defaultValue: '系统体检' }), icon: FlaskConical },
             { id: 'openclawLogs', label: t('openclaw.logs.title', { defaultValue: '服务日志' }), icon: Terminal },
           ],
         },
         {
-          label: t('sidebar.group.system', { defaultValue: '系统' }),
           items: [
+            { id: 'workspace', label: t('workspace.title', { defaultValue: '文件管理' }), icon: FolderOpen },
             { id: 'settings', label: t('settings.title', { defaultValue: '设置' }), icon: Settings },
           ],
         },

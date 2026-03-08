@@ -19,7 +19,8 @@ type View =
   | "openclawGateway"
   | "openclawTesting"
   | "openclawChannels"
-  | "openclawLogs";
+  | "openclawLogs"
+  | "chat";
 
 interface HeaderProps {
   currentView: View;
@@ -67,6 +68,12 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
         return t('openclaw.testing.title', { defaultValue: '系统体检' });
       case 'openclawChannels':
         return t('openclaw.channels.title', { defaultValue: '消息渠道' });
+      case 'openclawGateway':
+        return t('openclaw.gateway.title', { defaultValue: 'Gateway 配置' });
+      case 'openclawLogs':
+        return t('openclaw.logs.title', { defaultValue: '服务日志' });
+      case 'chat':
+        return t('chat.title', { defaultValue: '聊天' });
       default:
         return t('common.unknown', { defaultValue: '未知页面' });
     }
@@ -96,6 +103,8 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
         return t('openclaw.tools.description', { defaultValue: '配置可用工具和权限' });
       case 'openclawTesting':
         return t('openclaw.testing.subtitle', { defaultValue: '系统诊断与问题排查' });
+      case 'openclawGateway':
+        return t('openclaw.gateway.description', { defaultValue: '配置 AI 模型统一入口，访问权限和认证方式' });
       case 'openclawChannels':
         return t('openclaw.channels.description', { defaultValue: '配置 Telegram、Discord、飞书等通知渠道' });
       default:

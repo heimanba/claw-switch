@@ -701,7 +701,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 if let Some(icon) = macos_tray_icon() {
-                    tray_builder = tray_builder.icon(icon).icon_as_template(true);
+                    tray_builder = tray_builder.icon(icon).icon_as_template(false);
                 } else if let Some(icon) = app.default_window_icon() {
                     log::warn!("Falling back to default window icon for tray");
                     tray_builder = tray_builder.icon(icon.clone());
@@ -1105,6 +1105,10 @@ pub fn run() {
             commands::openclaw_onboard,
             commands::run_doctor,
             commands::run_doctor_fix,
+            // OpenClaw log files
+            commands::list_openclaw_logs,
+            commands::read_openclaw_log,
+            commands::clear_openclaw_log,
             // OpenClaw channels
             commands::get_openclaw_channels_config,
             commands::save_openclaw_channel_config,
@@ -1115,6 +1119,9 @@ pub fn run() {
             commands::install_openclaw_dingtalk_plugin,
             commands::test_openclaw_channel,
             commands::start_openclaw_channel_login,
+            // Gateway auth (chat)
+            commands::create_connect_frame,
+            commands::auto_pair_device,
             // Global upstream proxy
             commands::get_global_proxy_url,
             commands::set_global_proxy_url,
