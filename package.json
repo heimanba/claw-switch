@@ -1,6 +1,6 @@
 {
   "name": "claw-switch",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "All-in-One Assistant for Claude Code, Codex & Gemini CLI",
   "type": "module",
   "scripts": {
