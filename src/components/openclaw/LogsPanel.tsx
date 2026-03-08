@@ -141,7 +141,7 @@ type TabType = "app" | "service";
  */
 export function LogsPanel() {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TabType>("app");
+  const [activeTab, setActiveTab] = useState<TabType>("service");
 
   // ── App logs (in-memory logStore) ──────────────────────────
   const [memLogs, setMemLogs] = useState<MemLogEntry[]>([]);
@@ -357,6 +357,18 @@ export function LogsPanel() {
       {/* Tab bar */}
       <div className="flex items-center gap-1 mb-4 border-b border-border-subtle">
         <button
+          onClick={() => setActiveTab("service")}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "service"
+              ? "border-primary text-primary"
+              : "border-transparent text-text-muted hover:text-text-primary"
+          )}
+        >
+          <FileText size={14} />
+          {t("openclaw.logs.serviceTab", { defaultValue: "服务日志" })}
+        </button>
+        <button
           onClick={() => setActiveTab("app")}
           className={cn(
             "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
@@ -372,18 +384,6 @@ export function LogsPanel() {
               {memLogs.length}
             </span>
           )}
-        </button>
-        <button
-          onClick={() => setActiveTab("service")}
-          className={cn(
-            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
-            activeTab === "service"
-              ? "border-primary text-primary"
-              : "border-transparent text-text-muted hover:text-text-primary"
-          )}
-        >
-          <FileText size={14} />
-          {t("openclaw.logs.serviceTab", { defaultValue: "服务日志" })}
         </button>
       </div>
 
