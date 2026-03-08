@@ -248,8 +248,6 @@ export function ChatPage() {
   const [wsStatus, setWsStatus] = useState<'connecting' | 'ready' | 'error' | 'reconnecting' | 'disconnected'>('connecting')
   const [showSidebar, setShowSidebar] = useState(false)
   const [showCmdPanel, setShowCmdPanel] = useState(false)
-  const [showOverlay, setShowOverlay] = useState(false)
-  const [overlayDesc, setOverlayDesc] = useState('正在连接 Gateway...')
   const [showDisconnectBar, setShowDisconnectBar] = useState(false)
   const [attachments, setAttachments] = useState<Array<{ type: string; mimeType: string; fileName: string; content: string }>>([])
   const [hasEverConnected, setHasEverConnected] = useState(false)
@@ -463,8 +461,6 @@ export function ChatPage() {
     if (state === 'error') {
       const errMsg = (payload.errorMessage as string) || (payload.error as Record<string, string>)?.message || '未知错误'
       if (/origin not allowed|NOT_PAIRED|PAIRING_REQUIRED|auth.*fail/i.test(errMsg)) {
-        setShowOverlay(true)
-        setOverlayDesc('连接被 Gateway 拒绝，请检查 Gateway 配置')
         return
       }
       const now = Date.now()
@@ -566,7 +562,6 @@ export function ChatPage() {
         setSessionKey(sk)
         sessionKeyRef.current = sk
         setWsStatus('ready')
-        setShowOverlay(false)
         setShowDisconnectBar(false)
         setHasEverConnected(true)
         await loadHistory(sk)
@@ -595,28 +590,16 @@ export function ChatPage() {
       if (status === 'ready' || status === 'connected') {
         setHasEverConnected(true)
         setShowDisconnectBar(false)
-        setShowOverlay(false)
       } else if (status === 'error') {
         setShowDisconnectBar(false)
-        setShowOverlay(true)
-        setOverlayDesc(errorMsg || '连接 Gateway 失败')
       } else if (status === 'reconnecting' || status === 'disconnected') {
         setShowDisconnectBar(hasEverConnected)
-        if (!hasEverConnected) {
-          setShowOverlay(true)
-          setOverlayDesc('正在连接 Gateway...')
-        }
       }
     })
 
     const unsubReady = wsClient.onReady((_hello, sk, err) => {
       if (!pageActiveRef.current) return
-      if (err?.error) {
-        setShowOverlay(true)
-        setOverlayDesc(err.message || '连接失败')
-        return
-      }
-      setShowOverlay(false)
+      if (err?.error) return
       setHasEverConnected(true)
       if (!sessionKeyRef.current) {
         const saved = localStorage.getItem(STORAGE_SESSION_KEY)
@@ -816,12 +799,6 @@ export function ChatPage() {
       setInputValue(cmd)
       setTimeout(() => sendMessage(), 0)
     }
-  }
-
-  // ── 修复重连 ──
-  const handleFixConnect = async () => {
-    setOverlayDesc('正在重连...')
-    wsClient.reconnect()
   }
 
   // ── 渲染单条消息气泡 ──
@@ -1160,29 +1137,6 @@ export function ChatPage() {
             )}
           </button>
         </div>
-
-        {/* 连接引导遮罩 */}
-        {showOverlay && (
-          <div className="chat-overlay">
-            <div className="chat-overlay-card">
-              <div className="chat-overlay-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} width={48} height={48}>
-                  <path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z" />
-                </svg>
-              </div>
-              <div className="chat-overlay-title">Gateway 连接未就绪</div>
-              <div className="chat-overlay-desc">{overlayDesc}</div>
-              <div className="chat-overlay-actions">
-                <button className="chat-overlay-btn-primary" onClick={handleFixConnect}>
-                  重新连接
-                </button>
-              </div>
-              <div className="chat-overlay-hint">
-                请确保 OpenClaw Gateway 已启动，或检查 Gateway 配置
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

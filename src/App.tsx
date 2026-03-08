@@ -1221,14 +1221,14 @@ function App() {
 
         {/* Gateway 未启动全局警告横幅 */}
         {isOpenclaw && isGatewayRunning === false && (
-          <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 bg-amber-600 dark:bg-amber-700 text-white text-sm">
+          <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 bg-amber-600 dark:bg-amber-700 text-white text-xs">
             <span className="font-medium">
               {t("openclaw.gateway.notRunningBanner", { defaultValue: "Gateway 未启动，部分功能不可用" })}
             </span>
             <button
               onClick={() => void handleStartGateway()}
               disabled={gatewayStarting}
-              className="ml-4 px-3 py-1 rounded bg-white/20 hover:bg-white/30 font-medium text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
+              className="ml-3 px-2.5 py-0.5 rounded text-xs bg-white/20 hover:bg-white/30 font-medium text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
             >
               {gatewayStarting
                 ? t("overview.openclaw.serviceStarting", { defaultValue: "启动中…" })

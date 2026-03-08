@@ -520,13 +520,15 @@ export function SessionManagerPage({ appId }: { appId: string }) {
                       />
                     </div>
 
-                    {/* 浮动目录按钮 (小屏幕) */}
-                    <SessionTocDialog
-                      items={userMessagesToc}
-                      onItemClick={scrollToMessage}
-                      open={tocDialogOpen}
-                      onOpenChange={setTocDialogOpen}
-                    />
+                    {/* 浮动目录按钮 (小屏幕)，OpenClaw 不显示 */}
+                    {appId !== "openclaw" && (
+                      <SessionTocDialog
+                        items={userMessagesToc}
+                        onItemClick={scrollToMessage}
+                        open={tocDialogOpen}
+                        onOpenChange={setTocDialogOpen}
+                      />
+                    )}
                   </CardContent>
                 </>
               )}
