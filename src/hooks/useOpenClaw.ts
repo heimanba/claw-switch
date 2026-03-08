@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { openclawApi } from "@/lib/api/openclaw";
 import { providersApi } from "@/lib/api/providers";
 import { serviceLogger, envLogger, toolsLogger, agentsLogger } from "@/lib/logger";
+import { extractErrorMessage } from "@/utils/errorUtils";
 import type {
   OpenClawEnvConfig,
   OpenClawToolsConfig,
@@ -136,6 +139,40 @@ export function useOpenClawServiceDetail(enabled: boolean) {
     enabled,
     refetchInterval: enabled ? 3000 : false,
     placeholderData: (previousData: { running: boolean; pid: number | null; port: number; gateway_installed: boolean | null } | undefined) => previousData,
+  });
+}
+
+/**
+ * 启动 OpenClaw 服务（Gateway）：未安装则先安装，再启动。
+ * 横幅与概览共用，保证行为与提示一致。
+ */
+export function useStartOpenClawService() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  return useMutation({
+    mutationFn: async () => {
+      serviceLogger.action("启动服务");
+      const detail = await openclawApi.getServiceDetail();
+      if (detail.gateway_installed === false) {
+        serviceLogger.info("系统服务未安装，正在执行 gateway install...");
+        toast.info(t("overview.openclaw.gatewayInstalling", { defaultValue: "正在安装系统服务..." }));
+        await openclawApi.installGateway();
+        serviceLogger.info("✅ gateway install 完成");
+      }
+      serviceLogger.info("正在启动服务...");
+      await openclawApi.startService();
+      serviceLogger.info("✅ 服务启动成功");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: openclawKeys.serviceStatus });
+      toast.success(t("overview.openclaw.serviceStarted"));
+    },
+    onError: (e) => {
+      serviceLogger.error("❌ 服务启动失败", e);
+      toast.error(t("overview.openclaw.serviceStartFailed"), {
+        description: extractErrorMessage(e) || undefined,
+      });
+    },
   });
 }
 

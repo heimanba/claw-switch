@@ -4,9 +4,12 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { wsClient, uuid } from '@/lib/wsClient'
 import { cn } from '@/lib/utils'
+import { openclawApi } from '@/lib/api/openclaw'
+import { extractErrorMessage } from '@/utils/errorUtils'
 import type { OpenClawGatewayConfig } from '@/types'
 
 const RENDER_THROTTLE = 30
@@ -249,6 +252,7 @@ export function ChatPage() {
   const [showSidebar, setShowSidebar] = useState(false)
   const [showCmdPanel, setShowCmdPanel] = useState(false)
   const [showDisconnectBar, setShowDisconnectBar] = useState(false)
+  const [gatewayStarting, setGatewayStarting] = useState(false)
   const [attachments, setAttachments] = useState<Array<{ type: string; mimeType: string; fileName: string; content: string }>>([])
   const [hasEverConnected, setHasEverConnected] = useState(false)
 
@@ -579,6 +583,26 @@ export function ChatPage() {
       console.error('[chat] connectGateway error:', e)
     }
   }, [loadHistory, refreshSessionList])
+
+  const handleStartGateway = useCallback(async () => {
+    if (gatewayStarting) return
+    setGatewayStarting(true)
+    try {
+      const detail = await openclawApi.getServiceDetail()
+      if (detail.gateway_installed === false) {
+        await openclawApi.installGateway()
+      }
+      await openclawApi.startService()
+      toast.success(_t('openclaw.testing.gatewayStarted', { defaultValue: '网关服务已启动' }))
+      setTimeout(() => wsClient.reconnect(), 800)
+    } catch (e) {
+      toast.error(_t('openclaw.testing.gatewayStartFailed', { defaultValue: '启动网关失败' }), {
+        description: extractErrorMessage(e) || undefined,
+      })
+    } finally {
+      setGatewayStarting(false)
+    }
+  }, [gatewayStarting, _t])
 
   // ── 初始化 ──
   useEffect(() => {
@@ -1035,13 +1059,48 @@ export function ChatPage() {
 
         {/* 消息区域 */}
         <div className="chat-messages" onClick={() => setShowCmdPanel(false)}>
-          {renderMessageGroups()}
-          {isSending && !isStreaming && (
-            <div className="chat-typing">
-              <span /><span /><span />
+          {!wsClient.gatewayReady ? (
+            <div className="chat-gateway-empty">
+              <div className="chat-gateway-empty-illus">
+                <svg viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                  <defs>
+                    <linearGradient id="chat-gw-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.9" />
+                      <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0.6" />
+                    </linearGradient>
+                  </defs>
+                  <rect x="35" y="28" width="50" height="44" rx="6" stroke="var(--color-accent)" strokeWidth="2.5" fill="var(--color-bg-secondary)" />
+                  <circle cx="60" cy="50" r="8" fill="url(#chat-gw-grad)" />
+                  <path d="M60 18 L60 28 M45 50 L35 50 M85 50 L75 50 M60 72 L60 82" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" opacity="0.7" />
+                  <path d="M28 50 L18 50 M92 50 L102 50" stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="4 3" opacity="0.8" />
+                </svg>
+              </div>
+              <div className="chat-gateway-empty-title">{_t('openclaw.gateway.startButton', { defaultValue: '启动 Gateway' })}</div>
+              <div className="chat-gateway-empty-desc">
+                {_t('openclaw.chat.gatewayEmptyHint', { defaultValue: '连接 OpenClaw Gateway 后即可开始对话' })}
+              </div>
+              <button
+                type="button"
+                className="chat-gateway-empty-btn"
+                onClick={(e) => { e.stopPropagation(); handleStartGateway() }}
+                disabled={gatewayStarting}
+              >
+                {gatewayStarting
+                  ? _t('overview.openclaw.serviceStarting', { defaultValue: '启动中…' })
+                  : _t('openclaw.gateway.startButton', { defaultValue: '启动 Gateway' })}
+              </button>
             </div>
+          ) : (
+            <>
+              {renderMessageGroups()}
+              {isSending && !isStreaming && (
+                <div className="chat-typing">
+                  <span /><span /><span />
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         {/* 快捷指令面板 */}

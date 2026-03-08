@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -34,6 +34,8 @@ interface AddProviderDialogProps {
       suggestedDefaults?: OpenClawSuggestedDefaults;
     },
   ) => Promise<void> | void;
+  /** 打开时预选的预设 ID，用于"一键添加"场景 */
+  initialPresetId?: string;
 }
 
 export function AddProviderDialog({
@@ -41,6 +43,7 @@ export function AddProviderDialog({
   onOpenChange,
   appId,
   onSubmit,
+  initialPresetId,
 }: AddProviderDialogProps) {
   const { t } = useTranslation();
   // OpenCode and OpenClaw don't support universal providers
@@ -51,7 +54,14 @@ export function AddProviderDialog({
     useState<UniversalProviderPreset | null>(null);
 
   // 左栏预设选择状态（提升到 AddProviderDialog）
-  const [selectedPresetId, setSelectedPresetId] = useState<string>("custom");
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(initialPresetId ?? "custom");
+
+  // 当 Dialog 打开时，若有 initialPresetId 则同步（支持多次打开）
+  useEffect(() => {
+    if (open && initialPresetId) {
+      setSelectedPresetId(initialPresetId);
+    }
+  }, [open, initialPresetId]);
 
   // 根据 appId 构建预设 entries
   const presetEntries = useMemo((): PresetEntry[] => {

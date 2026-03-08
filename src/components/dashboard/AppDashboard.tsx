@@ -71,7 +71,7 @@ import {
   setUninstallError,
   resetUninstallState,
 } from "@/stores/installStore";
-import { useOpenClawServiceDetail, useOpenClawChannels } from "@/hooks/useOpenClaw";
+import { useOpenClawServiceDetail, useOpenClawChannels, useStartOpenClawService } from "@/hooks/useOpenClaw";
 import { serviceLogger } from "@/lib/logger";
 
 export type DashboardQuickAction =
@@ -171,6 +171,8 @@ export function AppDashboard({
 
   // Query channel configs for overview card (only when openclaw tab is active)
   const { data: openclawChannels } = useOpenClawChannels(isOpenClaw);
+
+  const startOpenClawService = useStartOpenClawService();
 
   const { data: toolVersion, refetch: refetchToolVersion } = useToolVersionQuery(
     activeApp === "claude" ? "claude" :
@@ -275,35 +277,7 @@ export function AppDashboard({
     handleUninstall();
   }, [activeApp, handleUninstall]);
 
-  // OpenClaw service action handlers
-  const handleServiceStart = useCallback(async () => {
-    if (serviceActionLoading) return;
-    serviceLogger.action("启动服务");
-    setServiceActionLoading(true);
-    try {
-      // 先获取最新状态，检查 gateway 是否已安装
-      const detail = await openclawApi.getServiceDetail();
-      if (detail.gateway_installed === false) {
-        // gateway 未安装，先执行 install
-        serviceLogger.info("系统服务未安装，正在执行 gateway install...");
-        toast.info(t("overview.openclaw.gatewayInstalling", { defaultValue: "正在安装系统服务..." }));
-        await openclawApi.installGateway();
-        serviceLogger.info("✅ gateway install 完成");
-      }
-      // 再启动服务
-      serviceLogger.info("正在启动服务...");
-      await openclawApi.startService();
-      await refetchServiceDetail();
-      serviceLogger.info("✅ 服务启动成功");
-      toast.success(t("overview.openclaw.serviceStarted"));
-    } catch (e) {
-      serviceLogger.error("❌ 服务启动失败", e);
-      toast.error(typeof e === "string" ? e : t("overview.openclaw.serviceStartFailed"));
-    } finally {
-      setServiceActionLoading(false);
-    }
-  }, [serviceActionLoading, refetchServiceDetail, t]);
-
+  // OpenClaw service action handlers（启动已抽到 useStartOpenClawService，与横幅共用）
   const handleServiceStop = useCallback(async () => {
     if (serviceActionLoading) return;
     serviceLogger.action("停止服务");
@@ -769,12 +743,12 @@ export function AppDashboard({
                     </>
                   ) : (
                     <Button
-                      onClick={handleServiceStart}
-                      disabled={serviceActionLoading}
+                      onClick={() => void startOpenClawService.mutateAsync()}
+                      disabled={serviceActionLoading || startOpenClawService.isPending}
                       size="sm"
                       className="h-8 px-4 bg-green-600 hover:bg-green-700 text-white font-medium"
                     >
-                      {serviceActionLoading ? (
+                      {startOpenClawService.isPending ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                       ) : (
                         <Play className="w-3.5 h-3.5 mr-1.5" />

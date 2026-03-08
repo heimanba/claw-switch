@@ -262,6 +262,15 @@
     "editProviderHint": "更新配置后将立即应用到当前供应商。",
     "deleteProvider": "删除供应商",
     "addNewProvider": "添加新供应商",
+    "codingPlanBanner": {
+      "title": "百炼 Coding Plan",
+      "badge": "首购 7.9 元",
+      "desc1": "支持 Qwen3.5-Plus、Qwen3-Coder-Next、GLM-5、Kimi-k2.5 等模型",
+      "desc2": "续费 5 折起，专为 AI Coding 场景打造，适配 OpenClaw 等工具",
+      "quickAdd": "一键添加全部模型",
+      "getApiKey": "获取 API Key",
+      "official": "官网"
+    },
     "addClaudeProvider": "添加 Claude Code 供应商",
     "addCodexProvider": "添加 Codex 供应商",
     "addGeminiProvider": "添加 Gemini 供应商",
@@ -1835,8 +1844,11 @@
       "saveFailed": "保存 Agents 配置失败",
       "loadFailed": "读取 Agents 配置失败"
     },
+    "chat": {
+      "gatewayEmptyHint": "连接 OpenClaw Gateway 后即可开始对话"
+    },
     "gateway": {
-      "notRunningBanner": "Gateway 未启动，部分功能不可用",
+      "notRunningBanner": "服务未启动，部分功能不可用",
       "startButton": "启动 Gateway",
       "title": "Gateway 配置",
       "description": "配置 AI 模型统一入口的服务端口、访问权限和认证方式",

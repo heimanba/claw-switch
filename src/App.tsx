@@ -29,8 +29,7 @@ import {
 import { getDefaultVisibleApps } from "@/config/appConfig";
 import { checkAllEnvConflicts, checkEnvConflicts } from "@/lib/api/env";
 import { useProviderActions } from "@/hooks/useProviderActions";
-import { openclawKeys, useOpenClawServiceStatus } from "@/hooks/useOpenClaw";
-import { openclawApi } from "@/lib/api/openclaw";
+import { openclawKeys, useOpenClawServiceStatus, useStartOpenClawService } from "@/hooks/useOpenClaw";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { useLastValidValue } from "@/hooks/useLastValidValue";
 import { extractErrorMessage } from "@/utils/errorUtils";
@@ -184,6 +183,7 @@ function App() {
   const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
   const [agentsAddOpen, setAgentsAddOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addProviderInitialPresetId, setAddProviderInitialPresetId] = useState<string | undefined>(undefined);
   // 来自诊断页跳转到环境变量页的标记
   const [envFromDiagnostics, setEnvFromDiagnostics] = useState(false);
   // 诊断结果持久化状态（跨视图切换保留）
@@ -260,28 +260,9 @@ function App() {
 
   // OpenClaw Gateway 状态检测（仅当活动 app 为 openclaw 时轮询）
   const isOpenclaw = activeApp === "openclaw";
-  const { data: isGatewayRunning, refetch: refetchGatewayStatus } = useOpenClawServiceStatus(isOpenclaw);
-  const [gatewayStarting, setGatewayStarting] = useState(false);
-
-  const handleStartGateway = async () => {
-    if (gatewayStarting) return;
-    setGatewayStarting(true);
-    try {
-      const detail = await openclawApi.getServiceDetail();
-      if (detail.gateway_installed === false) {
-        await openclawApi.installGateway();
-      }
-      await openclawApi.startService();
-      await refetchGatewayStatus();
-      toast.success(t("openclaw.testing.gatewayStarted", { defaultValue: "网关服务已启动" }));
-    } catch (e) {
-      toast.error(t("openclaw.testing.gatewayStartFailed", { defaultValue: "启动网关失败" }), {
-        description: extractErrorMessage(e) || undefined,
-      });
-    } finally {
-      setGatewayStarting(false);
-    }
-  };
+  const { data: isGatewayRunning } = useOpenClawServiceStatus(isOpenclaw);
+  const startOpenClawService = useStartOpenClawService();
+  const handleStartGateway = () => void startOpenClawService.mutateAsync();
   const activeProviderId = useMemo(() => {
     const target = proxyStatus?.active_targets?.find(
       (t) => t.app_type === activeApp,
@@ -1226,13 +1207,13 @@ function App() {
               {t("openclaw.gateway.notRunningBanner", { defaultValue: "Gateway 未启动，部分功能不可用" })}
             </span>
             <button
-              onClick={() => void handleStartGateway()}
-              disabled={gatewayStarting}
+              onClick={handleStartGateway}
+              disabled={startOpenClawService.isPending}
               className="ml-3 px-2.5 py-0.5 rounded text-xs bg-white/20 hover:bg-white/30 font-medium text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
             >
-              {gatewayStarting
+              {startOpenClawService.isPending
                 ? t("overview.openclaw.serviceStarting", { defaultValue: "启动中…" })
-                : t("openclaw.gateway.startButton", { defaultValue: "启动 Gateway" })}
+                : t("overview.openclaw.start")}
             </button>
           </div>
         )}
@@ -1259,6 +1240,7 @@ function App() {
         onOpenChange={setIsAddOpen}
         appId={activeApp}
         onSubmit={addProvider}
+        initialPresetId={addProviderInitialPresetId}
       />
 
       <EditProviderDialog

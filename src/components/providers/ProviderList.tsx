@@ -45,6 +45,7 @@ import { useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { OnboardingChecklist } from "@/components/providers/OnboardingChecklist";
+import { CodingPlanBanner } from "@/components/providers/CodingPlanBanner";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -68,6 +69,8 @@ interface ProviderListProps {
   onSetAsDefault?: (provider: Provider) => void; // OpenClaw: set as default model
   /** OpenClaw: navigate to agents defaults panel */
   onNavigateToAgents?: () => void;
+  /** OpenClaw: 一键添加百炼 Coding Plan 预设 */
+  onQuickAddCodingPlan?: () => void;
   /** When false and no providers, show minimal empty state instead of OnboardingChecklist (use when onboarding is rendered above by parent) */
   embedOnboardingWhenEmpty?: boolean;
   /** 控制 OnboardingChecklist 是否显示（纯实时检测模式） */
@@ -95,7 +98,8 @@ export function ProviderList({
   isProxyTakeover = false,
   activeProviderId,
   onSetAsDefault,
-  // onNavigateToAgents: no longer used — model config is now embedded via ModelConfigCard
+  onNavigateToAgents,
+  onQuickAddCodingPlan,
   embedOnboardingWhenEmpty = true,
   onboardingVisible = true,
   onOnboardingClose,
@@ -415,6 +419,11 @@ export function ProviderList({
           provider={managingProvider}
           onClose={() => setManagingProvider(null)}
         />
+      )}
+
+      {/* OpenClaw: Coding Plan 一键添加 Banner */}
+      {appId === "openclaw" && onQuickAddCodingPlan && (
+        <CodingPlanBanner onQuickAdd={onQuickAddCodingPlan} />
       )}
 
       <AnimatePresence>
