@@ -5,6 +5,7 @@ import { Plus, Sparkles } from 'lucide-react';
 import type { AppId } from '@/lib/api';
 import type { Provider } from '@/types';
 import { Button } from '@/components/ui/button';
+import { CodingPlanBanner } from '@/components/providers/CodingPlanBanner';
 
 interface OnboardingChecklistProps {
   appId: AppId;
@@ -14,6 +15,8 @@ interface OnboardingChecklistProps {
   /** 外部控制是否显示（纯实时检测模式，无持久化） */
   visible?: boolean;
   onClose?: () => void;
+  /** OpenClaw: 一键添加 Coding Plan 全部模型 */
+  onQuickAddCodingPlan?: () => void;
 }
 
 export function OnboardingChecklist({
@@ -23,6 +26,7 @@ export function OnboardingChecklist({
   onCreate,
   visible = true,
   onClose,
+  onQuickAddCodingPlan,
 }: OnboardingChecklistProps) {
   const { t } = useTranslation();
 
@@ -79,6 +83,18 @@ export function OnboardingChecklist({
             </Button>
           )}
         </div>
+
+        {/* OpenClaw: Coding Plan 快速入口 */}
+        {onQuickAddCodingPlan && (
+          <div className="mt-6 text-left">
+            <p className="text-xs text-text-muted mb-2 text-center">
+              {t('onboarding.codingPlanHint', {
+                defaultValue: '或快速添加百炼 Coding Plan 全部模型，一步完成配置：',
+              })}
+            </p>
+            <CodingPlanBanner onQuickAdd={onQuickAddCodingPlan} />
+          </div>
+        )}
       </motion.div>
     </AnimatePresence>
   );

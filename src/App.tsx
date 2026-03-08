@@ -992,6 +992,14 @@ function App() {
                         ? () => { setCurrentView("agents"); }
                         : undefined
                     }
+                    onQuickAddCodingPlan={
+                      activeApp === "openclaw"
+                        ? () => {
+                            setAddProviderInitialPresetId("openclaw-0");
+                            setIsAddOpen(true);
+                          }
+                        : undefined
+                    }
                     embedOnboardingWhenEmpty={true}
                     onboardingVisible={showOnboarding}
                     onOnboardingClose={() => setShowOnboarding(false)}

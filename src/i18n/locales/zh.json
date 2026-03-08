@@ -1704,7 +1704,11 @@
   },
   "openclaw": {
     "providers": {
-      "title": "模型配置"
+      "title": "模型配置",
+      "description": "选择主模型及回退模型，主模型不可用时自动切换到回退模型。"
+    },
+    "modelConfig": {
+      "description": "选择主模型及回退模型，主模型不可用时自动切换到回退模型。"
     },
     "providerKey": "供应商标识",
     "providerKeyPlaceholder": "my-provider",
@@ -1834,7 +1838,6 @@
       "primaryModelHint": "在供应商列表中通过「设为默认模型」按钮设置",
       "notSet": "未设置",
       "fallbackModels": "回退模型",
-      "fallbackModelsHint": "逗号分隔，按优先级排列",
       "runtimeSection": "运行参数",
       "workspace": "工作区路径",
       "timeout": "超时时间（秒）",
@@ -2140,7 +2143,7 @@
     "skillsFailedDescription": "请打开 Skills 页面点击“导入已有”手动导入（或重启后再试）。"
   },
   "agents": {
-    "title": "智能体"
+    "title": "Agent 管理"
   },
   "modelTest": {
     "testProvider": "测试模型"

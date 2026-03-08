@@ -45,7 +45,6 @@ import { useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { OnboardingChecklist } from "@/components/providers/OnboardingChecklist";
-import { CodingPlanBanner } from "@/components/providers/CodingPlanBanner";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -309,6 +308,7 @@ export function ProviderList({
             onCreate={onCreate}
             visible={onboardingVisible}
             onClose={onOnboardingClose}
+            onQuickAddCodingPlan={appId === "openclaw" ? onQuickAddCodingPlan : undefined}
           />
         </div>
       );
@@ -408,9 +408,12 @@ export function ProviderList({
 
   return (
     <div className="mt-4 space-y-4">
-      {/* OpenClaw: ModelConfigCard — 主模型 / 回退模型配置 */}
+      {/* OpenClaw: ModelConfigCard — 主模型 / 回退模型配置 + Coding Plan Banner */}
       {appId === "openclaw" && (
-        <ModelConfigCard />
+        <ModelConfigCard
+          isCodingPlanAdded={Object.values(providers).some((p) => p.name === "Coding Plan")}
+          onQuickAddCodingPlan={onQuickAddCodingPlan}
+        />
       )}
 
       {/* OpenClaw: model management side panel */}
@@ -419,11 +422,6 @@ export function ProviderList({
           provider={managingProvider}
           onClose={() => setManagingProvider(null)}
         />
-      )}
-
-      {/* OpenClaw: Coding Plan 一键添加 Banner */}
-      {appId === "openclaw" && onQuickAddCodingPlan && (
-        <CodingPlanBanner onQuickAdd={onQuickAddCodingPlan} />
       )}
 
       <AnimatePresence>

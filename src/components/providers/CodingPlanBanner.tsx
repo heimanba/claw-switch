@@ -1,19 +1,69 @@
 import { useTranslation } from "react-i18next";
-import { Zap, Key, Globe } from "lucide-react";
+import { Zap, Key, Globe, Check } from "lucide-react";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { BAILIAN_ICON, BAILIAN_ICON_COLOR } from "@/config/bailianShared";
+import { settingsApi } from "@/lib/api/settings";
 
 interface CodingPlanBannerProps {
   /** 点击"一键添加全部模型"按钮的回调 */
   onQuickAdd: () => void;
+  /** Coding Plan 是否已添加，已添加时按钮显示"已配置"状态 */
+  isAdded?: boolean;
+  /** 紧凑模式：已添加后缩小为一行提示条，不占主要视觉空间 */
+  compact?: boolean;
 }
 
-export function CodingPlanBanner({ onQuickAdd }: CodingPlanBannerProps) {
+export function CodingPlanBanner({ onQuickAdd, isAdded = false, compact = false }: CodingPlanBannerProps) {
   const { t } = useTranslation();
 
-  const handleOpenLink = (url: string) => {
-    window.open(url, "_blank", "noopener,noreferrer");
+  const handleOpenLink = async (url: string) => {
+    try {
+      await settingsApi.openExternal(url);
+    } catch (e) {
+      console.error("Failed to open URL:", e);
+    }
   };
+
+  // 紧凑模式：已添加后显示为一行小提示条（使用主题色，与模型配置页一致）
+  if (compact && isAdded) {
+    return (
+      <div className="flex items-center justify-between rounded-lg border border-border bg-muted/60 px-3.5 py-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <ProviderIcon
+            icon={BAILIAN_ICON}
+            name="百炼"
+            color={BAILIAN_ICON_COLOR}
+            size={16}
+          />
+          <span className="text-xs text-muted-foreground truncate">
+            {t("provider.codingPlanBanner.title", { defaultValue: "百炼 Coding Plan" })}
+          </span>
+          <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 border border-primary/25 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            <Check className="h-2.5 w-2.5" />
+            {t("provider.codingPlanBanner.added", { defaultValue: "已添加" })}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => handleOpenLink("https://bailian.console.aliyun.com/?tab=coding-plan#/efm/detail")}
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Key className="h-3 w-3" />
+            {t("provider.codingPlanBanner.getApiKey", { defaultValue: "获取 API Key" })}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOpenLink("https://www.aliyun.com/benefit/scene/codingplan")}
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Globe className="h-3 w-3" />
+            {t("provider.codingPlanBanner.official", { defaultValue: "官网" })}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-indigo-700/30 bg-gradient-to-br from-[#1e1b4b] via-[#312e81] to-[#1e1b4b] px-5 py-4 shadow-lg">
@@ -59,17 +109,24 @@ export function CodingPlanBanner({ onQuickAdd }: CodingPlanBannerProps) {
 
         {/* 右侧：按钮 + 链接 */}
         <div className="flex flex-shrink-0 flex-col items-end gap-2">
-          {/* 一键添加按钮 */}
-          <button
-            type="button"
-            onClick={onQuickAdd}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 px-3.5 py-2 text-sm font-semibold text-white shadow-md shadow-purple-900/40 transition-all hover:from-violet-400 hover:to-purple-500 hover:shadow-purple-900/60 active:scale-95"
-          >
-            <Zap className="h-3.5 w-3.5 fill-current" />
-            {t("provider.codingPlanBanner.quickAdd", {
-              defaultValue: "一键添加全部模型",
-            })}
-          </button>
+          {/* 一键添加 / 已配置按钮 */}
+          {isAdded ? (
+            <div className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300">
+              <Check className="h-3 w-3" />
+              {t("provider.codingPlanBanner.alreadyAdded", { defaultValue: "已配置" })}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onQuickAdd}
+              className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-violet-500 to-purple-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow shadow-purple-900/40 transition-all hover:from-violet-400 hover:to-purple-500 hover:shadow-purple-900/60 active:scale-95"
+            >
+              <Zap className="h-3 w-3 fill-current" />
+              {t("provider.codingPlanBanner.quickAdd", {
+                defaultValue: "一键添加全部模型",
+              })}
+            </button>
+          )}
 
           {/* 辅助链接 */}
           <div className="flex items-center gap-3">

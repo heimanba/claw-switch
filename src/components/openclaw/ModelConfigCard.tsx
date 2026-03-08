@@ -32,13 +32,18 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import { CodingPlanBanner } from "@/components/providers/CodingPlanBanner";
 import type { OpenClawAgentsDefaults, OpenClawModelCatalogEntry } from "@/types";
 
 interface ModelConfigCardProps {
   className?: string;
+  /** 是否已添加 Coding Plan 供应商，用于 Banner 状态显示 */
+  isCodingPlanAdded?: boolean;
+  /** 点击"一键添加全部模型"的回调，传入时显示 Banner */
+  onQuickAddCodingPlan?: () => void;
 }
 
-const ModelConfigCard: React.FC<ModelConfigCardProps> = ({ className }) => {
+const ModelConfigCard: React.FC<ModelConfigCardProps> = ({ className, isCodingPlanAdded = false, onQuickAddCodingPlan }) => {
   const { t } = useTranslation();
   const { data: agentsData } = useOpenClawAgentsDefaults();
   const { data: availableModels = [] } = useOpenClawProviderModels();
@@ -197,29 +202,59 @@ const ModelConfigCard: React.FC<ModelConfigCardProps> = ({ className }) => {
             {t("openclaw.agents.primaryModel", { defaultValue: "主模型" })}
           </Label>
           {availableModels.length > 0 ? (
-            <Select value={primaryModel} onValueChange={setPrimaryModel}>
-              <SelectTrigger className="font-mono text-xs h-9">
-                <SelectValue placeholder={t("openclaw.agents.notSet", { defaultValue: "未设置" })} />
-              </SelectTrigger>
-              <SelectContent>
-                {availableModels.map((model) => (
-                  <SelectItem key={model} value={model} className="font-mono text-xs">
-                    {model}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={primaryModel} onValueChange={setPrimaryModel}>
+                <SelectTrigger className="font-mono text-xs h-9">
+                  <SelectValue placeholder={t("openclaw.agents.notSet", { defaultValue: "未设置" })} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableModels.map((model) => (
+                    <SelectItem key={model} value={model} className="font-mono text-xs">
+                      {model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* 有模型时：紧凑 Banner 条，提示 Coding Plan 来源 */}
+              {onQuickAddCodingPlan && (
+                <div className="mt-2">
+                  <CodingPlanBanner
+                    onQuickAdd={onQuickAddCodingPlan}
+                    isAdded={isCodingPlanAdded}
+                    compact
+                  />
+                </div>
+              )}
+            </>
           ) : (
-            <div className="h-9 px-3 flex items-center rounded-md border border-input bg-muted/50 font-mono text-xs text-muted-foreground">
-              {primaryModel || t("openclaw.agents.notSet", { defaultValue: "未设置" })}
+            <div className="space-y-3">
+              <div className="h-9 px-3 flex items-center rounded-md border border-input bg-muted/50 font-mono text-xs text-muted-foreground">
+                {primaryModel || t("openclaw.agents.notSet", { defaultValue: "未设置" })}
+              </div>
+              {/* 空状态：内嵌完整 Banner，引导用户添加模型 */}
+              {onQuickAddCodingPlan && (
+                <div className="rounded-lg border border-dashed border-muted-foreground/20 overflow-hidden">
+                  <div className="px-3 pt-2.5 pb-1">
+                    <p className="text-[11px] text-muted-foreground mb-2">
+                      {t("openclaw.agents.noModelsHint", {
+                        defaultValue: "暂无可用模型，可快速添加百炼 Coding Plan 套餐中的全部模型：",
+                      })}
+                    </p>
+                  </div>
+                  <CodingPlanBanner
+                    onQuickAdd={onQuickAddCodingPlan}
+                    isAdded={isCodingPlanAdded}
+                  />
+                </div>
+              )}
+              {!onQuickAddCodingPlan && (
+                <p className="text-xs text-muted-foreground">
+                  {t("openclaw.agents.primaryModelHint", {
+                    defaultValue: "请先添加供应商并配置模型",
+                  })}
+                </p>
+              )}
             </div>
-          )}
-          {availableModels.length === 0 && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("openclaw.agents.primaryModelHint", {
-                defaultValue: "请先添加供应商并配置模型",
-              })}
-            </p>
           )}
         </div>
 
@@ -331,11 +366,6 @@ const ModelConfigCard: React.FC<ModelConfigCardProps> = ({ className }) => {
                   })}
                 </div>
               )}
-              <p className="text-xs text-muted-foreground mt-1">
-                {t("openclaw.agents.fallbackModelsHint", {
-                  defaultValue: "主模型不可用时依序尝试回退模型",
-                })}
-              </p>
             </>
           ) : (
             <>
@@ -352,11 +382,6 @@ const ModelConfigCard: React.FC<ModelConfigCardProps> = ({ className }) => {
                 placeholder="provider/model-a, provider/model-b"
                 className="font-mono text-xs"
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                {t("openclaw.agents.fallbackModelsHint", {
-                  defaultValue: "主模型不可用时依序尝试回退模型",
-                })}
-              </p>
             </>
           )}
         </div>

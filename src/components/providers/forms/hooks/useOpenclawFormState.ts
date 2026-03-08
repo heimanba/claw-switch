@@ -10,6 +10,7 @@ interface UseOpenclawFormStateParams {
   };
   /** 新增模式下从预设直接传入的初始配置（优先级高于 initialData） */
   initialPresetConfig?: {
+    providerKey?: string;
     baseUrl?: string;
     apiKey?: string;
     api?: string;
@@ -83,6 +84,7 @@ export function useOpenclawFormState({
 
   const [openclawProviderKey, setOpenclawProviderKey] = useState<string>(() => {
     if (appId !== "openclaw") return "";
+    if (initialPresetConfig?.providerKey !== undefined) return initialPresetConfig.providerKey;
     return providerId || "";
   });
 

@@ -37,10 +37,9 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
       case 'dashboard':
         return t('overview.title', { appName: t(`apps.${activeApp}`), defaultValue: '{{appName}} 概览' });
       case 'providers':
-        return t('dashboard.appWorkspace', {
-          appName: t(`apps.${activeApp}`),
-          defaultValue: '{{appName}} 工作台',
-        });
+        return activeApp === 'openclaw'
+          ? t('openclaw.providers.title', { defaultValue: '模型配置' })
+          : t('providers.title', { defaultValue: '供应商配置' });
       case 'settings':
         return t('settings.title', { defaultValue: '系统设置' });
       case 'prompts':
@@ -84,7 +83,9 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
       case 'dashboard':
         return '';
       case 'providers':
-        return t('providers.description', { defaultValue: '配置和管理模型供应商' });
+        return activeApp === 'openclaw'
+          ? t('openclaw.modelConfig.description', { defaultValue: '选择主模型及回退模型，主模型不可用时自动切换到回退模型。' })
+          : t('providers.description', { defaultValue: '配置和管理模型供应商' });
       case 'settings':
         return t('settings.description', { defaultValue: '系统配置和偏好设置' });
       case 'prompts':

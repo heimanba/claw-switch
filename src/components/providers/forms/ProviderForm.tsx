@@ -654,6 +654,7 @@ export function ProviderForm({
           const preset = openclawProviderPresets[presetIndex];
           const config = preset.settingsConfig;
           return {
+            providerKey: preset.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
             baseUrl: config.baseUrl ?? "",
             apiKey: config.apiKey ?? "",
             api: config.api ?? "openai-completions",
