@@ -308,7 +308,7 @@ jobs:
           body: |
             ## Claw switch ${{ github.ref_name }}
 
-            Claude Code 供应商切换工具
+            OpenClaw 一键安装 & 可视化配置工具
 
             ### 下载
 

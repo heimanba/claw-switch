@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use tauri::State;
 
 use crate::openclaw_config;
@@ -11,69 +12,182 @@ use log::{debug, info, warn};
 // Path Helpers
 // ============================================================================
 
+/// 通过用户的 login shell 获取 node 可执行文件所在目录。
+///
+/// GUI 应用不继承 shell 环境（.zshrc / .zprofile），直接运行命令可能找到错误的 node。
+/// 以 `-l`（login）方式启动 shell，可加载 `.zprofile` / `.bash_profile`，
+/// 获取用户实际配置的 node 版本路径（如 /opt/homebrew/opt/node@22/bin）。
+///
+/// 结果通过 OnceLock 缓存，全程只调用一次 shell。
+#[cfg(not(target_os = "windows"))]
+static SHELL_NODE_BIN_CACHE: OnceLock<Option<String>> = OnceLock::new();
+
+#[cfg(not(target_os = "windows"))]
+fn get_shell_node_bin_dir() -> Option<String> {
+    SHELL_NODE_BIN_CACHE
+        .get_or_init(|| {
+            let shell = std::env::var("SHELL").ok()?;
+            if shell.is_empty() {
+                return None;
+            }
+            // 以 interactive shell 方式运行，加载 ~/.zshrc / ~/.bashrc，
+            // 获取用户实际选定的 node 可执行文件路径。
+            // 注意：-l (login) 只加载 .zprofile，不加载 .zshrc；
+            //       -i (interactive) 会加载 .zshrc，能正确读取用户的 export PATH 配置。
+            let output = std::process::Command::new(&shell)
+                .args(["-i", "-c", "command -v node 2>/dev/null"])
+                .output()
+                .ok()?;
+            if output.status.success() {
+                // .zshrc 启动可能向 stdout 写入多行内容，取最后一个像路径的行
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let path = stdout
+                    .lines()
+                    .filter(|l| {
+                        let t = l.trim();
+                        !t.is_empty() && t.starts_with('/')
+                    })
+                    .last()
+                    .map(|l| l.trim().to_string())?;
+                return std::path::Path::new(&path)
+                    .parent()
+                    .map(|p| p.display().to_string());
+            }
+            None
+        })
+        .clone()
+}
+
 /// 构建扩展的 PATH 环境变量。
 ///
 /// GUI 应用启动时不继承用户 shell 的 PATH，需手动注入
 /// Homebrew / nvm / volta / fnm / asdf / mise 等常见路径。
+///
+/// 优先级设计：
+///   0. 用户 login shell 实际使用的 node（最准确，通过 `$SHELL -l -c "command -v node"` 获取）
+///   1. nvm 中版本号 >= 22 的路径（按版本降序）
+///   2. Homebrew node@XX keg-only 公式（/opt/homebrew/opt/node@XX，按版本降序）
+///   3. /opt/homebrew/bin（Homebrew 默认 node，版本通常较新）
+///   4. fnm/volta/asdf/mise 等版本管理器的默认路径
+///   5. nvm 中版本号 < 22 的路径（兜底，避免挡住更新的 Homebrew node）
+///   6. 当前进程 PATH（系统路径，可能含旧版 node）
+///   7. /usr/bin:/bin 绝对兜底
 fn get_extended_path() -> String {
-    let mut parts: Vec<String> = Vec::new();
+    let mut preferred: Vec<String> = Vec::new(); // nvm/Homebrew >= v22
+    let mut mid: Vec<String> = Vec::new();       // fnm/volta/asdf/mise/npm-global
+    let mut nvm_old: Vec<String> = Vec::new();   // nvm < v22，放在系统 PATH 之后
+
     let home = dirs::home_dir().unwrap_or_default();
     let home_str = home.display().to_string();
-
-    // ① 最高优先级：继承当前进程 PATH
-    //    用户 shell 里通过 nvm/fnm/volta/Homebrew 选定的 node/npm 版本就在这里，
-    //    必须放最前面，确保 npm install 使用用户实际期望的版本。
     let current = std::env::var("PATH").unwrap_or_default();
-    if !current.is_empty() {
-        parts.push(current);
+
+    // ⓪ 最高优先级：用户 login shell 实际使用的 node 目录
+    //    这是最准确的来源——直接复现用户 shell 中 `which node` 的结果，
+    //    可正确处理 nvm use、Homebrew link、export PATH 等各种配置方式。
+    #[cfg(not(target_os = "windows"))]
+    if let Some(bin_dir) = get_shell_node_bin_dir() {
+        preferred.push(bin_dir);
     }
 
-    // ② 兜底：nvm default alias（GUI 应用启动时继承到的 PATH 可能不含 nvm）
     if !home_str.is_empty() {
-        let nvm_alias = format!("{home_str}/.nvm/alias/default");
-        if let Ok(ver) = std::fs::read_to_string(&nvm_alias) {
-            let ver = ver.trim().trim_start_matches('v');
-            if !ver.is_empty() {
-                let p = format!("{home_str}/.nvm/versions/node/v{ver}/bin");
-                if std::path::Path::new(&p).exists() {
-                    // 插到最前，比当前 PATH 更优先（仅当 default alias 存在时）
-                    parts.insert(0, p);
-                }
-            }
-        }
-
-        // ③ 兜底：nvm 所有已安装版本
+        // ① nvm：扫描所有已安装版本，>= 22 放 preferred，其余放 nvm_old（避免抢占 Homebrew 的新版）
         let nvm_base = format!("{home_str}/.nvm/versions/node");
         if let Ok(entries) = std::fs::read_dir(&nvm_base) {
-            for entry in entries.flatten() {
-                let bin = entry.path().join("bin");
-                if bin.exists() {
-                    parts.push(bin.display().to_string());
+            let mut nvm_bins: Vec<(u32, u32, u32, String)> = entries
+                .flatten()
+                .filter_map(|e| {
+                    let bin = e.path().join("bin");
+                    if !bin.exists() {
+                        return None;
+                    }
+                    let name = e.file_name().into_string().ok()?;
+                    let ver = name.trim_start_matches('v');
+                    let mut nums = ver.split('.').filter_map(|s| s.parse::<u32>().ok());
+                    let major = nums.next().unwrap_or(0);
+                    let minor = nums.next().unwrap_or(0);
+                    let patch = nums.next().unwrap_or(0);
+                    Some((major, minor, patch, bin.display().to_string()))
+                })
+                .collect();
+            nvm_bins.sort_unstable_by(|a, b| {
+                b.0.cmp(&a.0)
+                    .then_with(|| b.1.cmp(&a.1))
+                    .then_with(|| b.2.cmp(&a.2))
+            });
+            for (major, _, _, path) in nvm_bins {
+                if major >= 22 {
+                    preferred.push(path);
+                } else {
+                    nvm_old.push(path); // 旧版 nvm node，作为最低优先级兜底
+                }
+            }
+        }
+    }
+
+    // ② Homebrew node@XX keg-only 公式（如 /opt/homebrew/opt/node@22/bin）
+    //    用户通过 `brew install node@22` 安装的版本，不在 /opt/homebrew/bin 里，
+    //    需要单独扫描。
+    #[cfg(target_os = "macos")]
+    {
+        let homebrew_opt = "/opt/homebrew/opt";
+        if let Ok(entries) = std::fs::read_dir(homebrew_opt) {
+            let mut hb_nodes: Vec<(u32, String)> = entries
+                .flatten()
+                .filter_map(|e| {
+                    let name = e.file_name().into_string().ok()?;
+                    // 匹配 "node@22", "node@20" 等 keg-only 公式
+                    let ver_str = name.strip_prefix("node@")?;
+                    let major: u32 = ver_str.parse().ok()?;
+                    let bin = e.path().join("bin");
+                    let node_bin = bin.join("node");
+                    if node_bin.exists() {
+                        Some((major, bin.display().to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            // 按版本号降序，最新版本优先
+            hb_nodes.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+            for (major, path) in hb_nodes {
+                if major >= 22 {
+                    preferred.push(path);
+                } else {
+                    mid.push(path); // 低于 22 的 keg 公式放中间
                 }
             }
         }
 
-        // ④ 兜底：其他版本管理器 / 全局 npm
-        parts.push(format!("{home_str}/.fnm/aliases/default/bin")); // fnm
-        parts.push(format!("{home_str}/.volta/bin"));               // volta
-        parts.push(format!("{home_str}/.asdf/shims"));              // asdf
-        parts.push(format!("{home_str}/.local/share/mise/shims"));  // mise
-        parts.push(format!("{home_str}/.npm-global/bin"));          // npm global
-        parts.push(format!("{home_str}/Library/pnpm"));             // pnpm (macOS)
-        parts.push(format!("{home_str}/.local/bin"));               // ~/.local/bin
+        // ③ Homebrew 默认 node（/opt/homebrew/bin/node），版本可能较新
+        preferred.push("/opt/homebrew/bin".to_string()); // Apple Silicon
+        preferred.push("/usr/local/bin".to_string());    // Intel Mac
+    }
+
+    if !home_str.is_empty() {
+        // ④ 其他版本管理器的默认路径（fnm/volta/asdf/mise）
+        mid.push(format!("{home_str}/.fnm/aliases/default/bin"));
+        mid.push(format!("{home_str}/.volta/bin"));
+        mid.push(format!("{home_str}/.asdf/shims"));
+        mid.push(format!("{home_str}/.local/share/mise/shims"));
+        mid.push(format!("{home_str}/.npm-global/bin"));
+        mid.push(format!("{home_str}/Library/pnpm"));
+        mid.push(format!("{home_str}/.local/bin"));
 
         #[cfg(target_os = "windows")]
         if let Some(appdata) = dirs::data_dir() {
-            parts.push(appdata.join("npm").display().to_string());
+            mid.push(appdata.join("npm").display().to_string());
         }
     }
 
-    // ⑤ 最低优先级：Homebrew / 系统路径（作为最终兜底）
-    #[cfg(target_os = "macos")]
-    {
-        parts.push("/opt/homebrew/bin".to_string()); // Apple Silicon
-        parts.push("/usr/local/bin".to_string());    // Intel Mac
+    // 组合最终 PATH
+    let mut parts: Vec<String> = Vec::new();
+    parts.extend(preferred);          // nvm >= v22、Homebrew node@XX >= v22、/opt/homebrew/bin
+    parts.extend(mid);                // fnm/volta/asdf/mise/npm-global
+    if !current.is_empty() {
+        parts.push(current);          // 当前进程 PATH（系统路径）
     }
+    parts.extend(nvm_old);            // nvm < v22，最低优先级
+
     #[cfg(not(target_os = "windows"))]
     {
         parts.push("/usr/bin".to_string());
@@ -858,8 +972,10 @@ pub async fn run_doctor() -> Result<Vec<DoctorItem>, String> {
     });
 
     // 2. 检查 Node.js（需要 >= 22）
+    // 必须使用 get_extended_path()，否则打包后 macOS 应用的系统 PATH 里找不到 nvm 管理的 node
     let node_result = std::process::Command::new("node")
         .arg("--version")
+        .env("PATH", get_extended_path())
         .output();
     let node_installed = node_result.as_ref().map(|o| o.status.success()).unwrap_or(false);
     let node_version_str = node_result

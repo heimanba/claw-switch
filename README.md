@@ -27,7 +27,6 @@ OpenClaw 等 AI 编程工具能力很强，但 **onboarding 门槛高**：需要
 - **多 Agent 实例 & 备份**：创建/删除/重命名实例、一键打包备份，渠道 Token 在 UI 内即可轮换。
 - **一份配置多端同步**：Coding Plan 等配置可同步到 Claude Code、OpenCode、OpenClaw，避免重复配置。
 
----
 
 ## 二、快速使用
 
@@ -35,9 +34,10 @@ OpenClaw 等 AI 编程工具能力很强，但 **onboarding 门槛高**：需要
 
 前往 [Releases](https://github.com/heimanba/claw-switch/releases) 页面下载最新版本，根据你的系统选择对应安装包：
 
-- **macOS**：`.dmg` 或 `.app`，拖入「应用程序」即可；若提示「无法验证开发者」，参见下方 [常见问题](#常见问题)。
-- **Windows**：`.msi` 或 `.exe`，按向导安装。
-- **Linux**：`.deb` / `.AppImage` 等，按发行版选择。
+- **macOS**：`Claw-Switch-v0.0.2-macOS.zip`（解压即用）或 `Claw-Switch-v0.0.2-macOS.tar.gz`（Homebrew）；若提示「无法验证开发者」，参见下方 [常见问题](#常见问题)。
+- **Windows**：`Claw-Switch-v0.0.2-Windows.msi`（安装版）或 `Claw-Switch-v0.0.2-Windows-Portable.zip`（绿色版）。
+- **Linux (x86_64)**：`Claw-Switch-v0.0.2-Linux-x86_64.AppImage` / `.deb` / `.rpm`，按发行版选择。
+- **Linux (ARM64)**：`Claw-Switch-v0.0.2-Linux-arm64.AppImage` / `.deb` / `.rpm`，按发行版选择。
 
 当前示例版本：[v0.0.2](https://github.com/heimanba/claw-switch/releases/tag/v0.0.2)。
 
