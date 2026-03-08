@@ -366,22 +366,16 @@ fn get_extended_path() -> String {
     let home = dirs::home_dir().unwrap_or_default();
     let home_str = home.display().to_string();
 
-    // macOS: Homebrew 路径
-    #[cfg(target_os = "macos")]
-    {
-        parts.push("/opt/homebrew/bin".to_string()); // Apple Silicon
-        parts.push("/usr/local/bin".to_string()); // Intel Mac
-    }
-
-    // Unix 通用系统路径
-    #[cfg(not(target_os = "windows"))]
-    {
-        parts.push("/usr/bin".to_string());
-        parts.push("/bin".to_string());
+    // ① 最高优先级：继承当前进程 PATH
+    //    用户 shell 里通过 nvm/fnm/volta/Homebrew 选定的 node/npm 版本就在这里，
+    //    必须放最前面，确保 npm install 使用用户实际期望的版本。
+    let current = std::env::var("PATH").unwrap_or_default();
+    if !current.is_empty() {
+        parts.push(current);
     }
 
     if !home_str.is_empty() {
-        // Unix/macOS：nvm default alias（读取最高优先级版本）
+        // ② 兜底：nvm default alias（GUI 启动时继承到的 PATH 可能不含 nvm）
         #[cfg(not(target_os = "windows"))]
         {
             let nvm_alias = format!("{home_str}/.nvm/alias/default");
@@ -390,12 +384,13 @@ fn get_extended_path() -> String {
                 if !ver.is_empty() {
                     let p = format!("{home_str}/.nvm/versions/node/v{ver}/bin");
                     if std::path::Path::new(&p).exists() {
+                        // 插到最前，比当前 PATH 更优先（仅当 default alias 存在时）
                         parts.insert(0, p);
                     }
                 }
             }
 
-            // nvm：扫描所有已安装版本
+            // ③ 兜底：nvm 所有已安装版本
             let nvm_base = format!("{home_str}/.nvm/versions/node");
             if let Ok(entries) = std::fs::read_dir(&nvm_base) {
                 for entry in entries.flatten() {
@@ -406,12 +401,13 @@ fn get_extended_path() -> String {
                 }
             }
 
+            // ④ 兜底：其他版本管理器 / 全局 npm
             parts.push(format!("{home_str}/.fnm/aliases/default/bin")); // fnm
-            parts.push(format!("{home_str}/.volta/bin")); // volta
-            parts.push(format!("{home_str}/.asdf/shims")); // asdf
-            parts.push(format!("{home_str}/.local/share/mise/shims")); // mise
-            parts.push(format!("{home_str}/.npm-global/bin")); // npm global
-            parts.push(format!("{home_str}/.local/bin")); // ~/.local/bin
+            parts.push(format!("{home_str}/.volta/bin"));               // volta
+            parts.push(format!("{home_str}/.asdf/shims"));              // asdf
+            parts.push(format!("{home_str}/.local/share/mise/shims"));  // mise
+            parts.push(format!("{home_str}/.npm-global/bin"));          // npm global
+            parts.push(format!("{home_str}/.local/bin"));               // ~/.local/bin
         }
 
         // Windows：nvm-windows 安装目录（默认 %APPDATA%\nvm）
@@ -460,10 +456,16 @@ fn get_extended_path() -> String {
         }
     }
 
-    // 追加当前 PATH
-    let current = std::env::var("PATH").unwrap_or_default();
-    if !current.is_empty() {
-        parts.push(current);
+    // ⑤ 最低优先级：Homebrew / 系统路径（作为最终兜底）
+    #[cfg(target_os = "macos")]
+    {
+        parts.push("/opt/homebrew/bin".to_string()); // Apple Silicon
+        parts.push("/usr/local/bin".to_string());    // Intel Mac
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        parts.push("/usr/bin".to_string());
+        parts.push("/bin".to_string());
     }
 
     parts.join(if cfg!(target_os = "windows") { ";" } else { ":" })
