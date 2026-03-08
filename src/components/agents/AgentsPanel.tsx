@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Bot, Plus, Pencil, Trash2, HardDriveDownload, BadgeCheck, Save } from "lucide-react";
+import { Bot, Plus, Pencil, Trash2, HardDriveDownload, BadgeCheck, Save, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import {
   useOpenClawAgents,
@@ -70,6 +70,51 @@ interface AddAgentDialogProps {
   isLoading: boolean;
 }
 
+function EmojiButton({
+  value,
+  onChange,
+  placeholder = "🤖",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const display = value.trim() || placeholder;
+
+  return editing ? (
+    <input
+      ref={inputRef}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => setEditing(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === "Escape") setEditing(false);
+      }}
+      className="w-10 h-10 rounded-full border border-primary text-center text-lg bg-primary/5 outline-none flex-shrink-0"
+      maxLength={4}
+    />
+  ) : (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      title="点击修改 Emoji（可选）"
+      className="w-10 h-10 rounded-full border border-border bg-muted/40 hover:bg-muted/80 flex items-center justify-center text-lg flex-shrink-0 transition-colors"
+    >
+      {display}
+    </button>
+  );
+}
+
 function AddAgentDialog({
   open,
   models,
@@ -115,7 +160,7 @@ function AddAgentDialog({
           <DialogTitle>{t("agentsPanel.addTitle")}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-4 px-6 py-4">
           <div>
             <Label className="mb-1.5 block text-sm">{t("agentsPanel.agentId")}</Label>
             <Input
@@ -129,23 +174,21 @@ function AddAgentDialog({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="mb-1.5 block text-sm">{t("agentsPanel.name")}</Label>
+          <div>
+            <Label className="mb-1.5 block text-sm">
+              {t("agentsPanel.name")}
+              <span className="ml-1 text-xs font-normal text-muted-foreground">（可选）</span>
+            </Label>
+            <div className="flex items-center gap-2">
+              <EmojiButton value={emoji} onChange={setEmoji} />
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t("agentsPanel.namePlaceholder")}
+                className="flex-1"
               />
             </div>
-            <div>
-              <Label className="mb-1.5 block text-sm">{t("agentsPanel.emoji")}</Label>
-              <Input
-                value={emoji}
-                onChange={(e) => setEmoji(e.target.value)}
-                placeholder="🤖"
-              />
-            </div>
+            <p className="mt-1 text-xs text-muted-foreground">点击左侧图标可设置 Emoji（可选）</p>
           </div>
 
           {models.length > 0 && (
@@ -191,22 +234,20 @@ function AddAgentDialog({
 }
 
 // ============================================================
-// Edit Agent Dialog
+// Edit Agent Dialog (Identity only: name + emoji)
 // ============================================================
 
 interface EditAgentDialogProps {
   open: boolean;
   agent: OpenClawAgentInfo | null;
-  models: string[];
   onClose: () => void;
-  onConfirm: (data: { name: string; emoji: string; model: string }) => void;
+  onConfirm: (data: { name: string; emoji: string }) => void;
   isLoading: boolean;
 }
 
 function EditAgentDialog({
   open,
   agent,
-  models,
   onClose,
   onConfirm,
   isLoading,
@@ -214,16 +255,13 @@ function EditAgentDialog({
   const { t } = useTranslation();
   const [name, setName] = useState(agent?.identityName || "");
   const [emoji, setEmoji] = useState(agent?.identityEmoji || "");
-  const [model, setModel] = useState(agent?.model || models[0] || "");
 
-  // 当 agent 变化时同步初始值
   React.useEffect(() => {
     if (agent) {
       setName(agent.identityName || "");
       setEmoji(agent.identityEmoji || "");
-      setModel(agent.model || models[0] || "");
     }
-  }, [agent, models]);
+  }, [agent]);
 
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) onClose();
@@ -231,58 +269,29 @@ function EditAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>
-            {t("agentsPanel.editTitle")} — {agent?.id}
+            {t("agentsPanel.editTitle")}: {agent?.id}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="mb-1.5 block text-sm">{t("agentsPanel.name")}</Label>
+        <div className="space-y-4 px-6 py-4">
+          <div>
+            <Label className="mb-1.5 block text-sm">
+              {t("agentsPanel.name")}
+              <span className="ml-1 text-xs font-normal text-muted-foreground">（可选）</span>
+            </Label>
+            <div className="flex items-center gap-2">
+              <EmojiButton value={emoji} onChange={setEmoji} />
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t("agentsPanel.namePlaceholder")}
+                className="flex-1"
               />
             </div>
-            <div>
-              <Label className="mb-1.5 block text-sm">{t("agentsPanel.emoji")}</Label>
-              <Input
-                value={emoji}
-                onChange={(e) => setEmoji(e.target.value)}
-                placeholder="🤖"
-              />
-            </div>
-          </div>
-
-          {models.length > 0 && (
-            <div>
-              <Label className="mb-1.5 block text-sm">{t("agentsPanel.model")}</Label>
-              <Select value={model} onValueChange={setModel}>
-                <SelectTrigger className="font-mono text-xs">
-                  <SelectValue placeholder={t("agentsPanel.selectModel")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem key={m} value={m} className="font-mono text-xs">
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div>
-            <Label className="mb-1.5 block text-sm">{t("agentsPanel.workspace")}</Label>
-            <Input
-              value={agent?.workspace || t("agentsPanel.notSet")}
-              readOnly
-              className="font-mono text-xs text-muted-foreground bg-muted cursor-not-allowed"
-            />
+            <p className="mt-1 text-xs text-muted-foreground">点击左侧图标可设置 Emoji（可选）</p>
           </div>
         </div>
 
@@ -291,7 +300,7 @@ function EditAgentDialog({
             {t("common.cancel")}
           </Button>
           <Button
-            onClick={() => onConfirm({ name: name.trim(), emoji: emoji.trim(), model })}
+            onClick={() => onConfirm({ name: name.trim(), emoji: emoji.trim() })}
             disabled={isLoading}
           >
             {isLoading ? t("common.saving") : t("common.save")}
@@ -303,102 +312,171 @@ function EditAgentDialog({
 }
 
 // ============================================================
-// Agent Card
+// Agent Card (expandable with inline model config)
 // ============================================================
 
 interface AgentCardProps {
   agent: OpenClawAgentInfo;
+  models: string[];
   onEdit: (agent: OpenClawAgentInfo) => void;
   onDelete: (agent: OpenClawAgentInfo) => void;
   onBackup: (agent: OpenClawAgentInfo) => void;
+  onModelChange: (agent: OpenClawAgentInfo, model: string) => void;
   isBackingUp: boolean;
+  isSavingModel: boolean;
 }
 
-function AgentCard({ agent, onEdit, onDelete, onBackup, isBackingUp }: AgentCardProps) {
+function AgentCard({ agent, models, onEdit, onDelete, onBackup, onModelChange, isBackingUp, isSavingModel }: AgentCardProps) {
   const { t } = useTranslation();
+  const NONE_VALUE = "__none__";
+  const [expanded, setExpanded] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(agent.model || NONE_VALUE);
   const displayName = agent.identityName || agent.id;
   const displayEmoji = agent.identityEmoji;
 
+  // Sync model when agent prop changes
+  useEffect(() => {
+    setSelectedModel(agent.model || NONE_VALUE);
+  }, [agent.model]);
+
+  const hasModelChange = selectedModel !== (agent.model || NONE_VALUE);
+
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        {/* Left: avatar + info */}
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-lg">
-            {displayEmoji ? (
-              <span>{displayEmoji}</span>
-            ) : (
-              <Bot className="w-5 h-5 text-primary" />
-            )}
-          </div>
-
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-              <span className="font-semibold text-sm truncate">{displayName}</span>
-              {agent.isDefault && (
-                <Badge variant="secondary" className="text-xs px-1.5 py-0 flex items-center gap-1">
-                  <BadgeCheck className="w-3 h-3" />
-                  {t("agentsPanel.default")}
-                </Badge>
-              )}
-              {displayName !== agent.id && (
-                <span className="font-mono text-xs text-muted-foreground truncate">
-                  [{agent.id}]
-                </span>
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      {/* Card header row */}
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          {/* Left: avatar + info */}
+          <button
+            className="flex items-start gap-3 min-w-0 flex-1 text-left"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-lg">
+              {displayEmoji ? (
+                <span>{displayEmoji}</span>
+              ) : (
+                <Bot className="w-5 h-5 text-primary" />
               )}
             </div>
 
-            <div className="space-y-0.5 mt-1">
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium">{t("agentsPanel.modelLabel")}: </span>
-                <span className="font-mono">
-                  {agent.model || <span className="italic">{t("agentsPanel.notSet")}</span>}
-                </span>
-              </p>
-              <p className="text-xs text-muted-foreground truncate max-w-xs">
-                <span className="font-medium">{t("agentsPanel.workspaceLabel")}: </span>
-                <span className="font-mono">
-                  {agent.workspace || <span className="italic">{t("agentsPanel.notSet")}</span>}
-                </span>
-              </p>
-            </div>
-          </div>
-        </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                <span className="font-semibold text-sm truncate">{displayName}</span>
+                {agent.isDefault && (
+                  <Badge variant="secondary" className="text-xs px-1.5 py-0 flex items-center gap-1">
+                    <BadgeCheck className="w-3 h-3" />
+                    {t("agentsPanel.default")}
+                  </Badge>
+                )}
+                {displayName !== agent.id && (
+                  <span className="font-mono text-xs text-muted-foreground truncate">
+                    [{agent.id}]
+                  </span>
+                )}
+              </div>
 
-        {/* Right: actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => onBackup(agent)}
-            disabled={isBackingUp}
-            title={t("agentsPanel.backup")}
-          >
-            <HardDriveDownload className="w-3.5 h-3.5" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => onEdit(agent)}
-            title={t("agentsPanel.edit")}
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </Button>
-          {!agent.isDefault && (
+              <div className="space-y-0.5 mt-1">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">{t("agentsPanel.modelLabel")}: </span>
+                  <span className="font-mono">
+                    {agent.model || <span className="italic">{t("agentsPanel.notSet")}</span>}
+                  </span>
+                </p>
+                {agent.workspace && (
+                  <p className="text-xs text-muted-foreground truncate max-w-xs">
+                    <span className="font-medium">{t("agentsPanel.workspaceLabel")}: </span>
+                    <span className="font-mono">{agent.workspace}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-shrink-0 text-muted-foreground mt-1">
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </div>
+          </button>
+
+          {/* Right: actions */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             <Button
               variant="outline"
               size="sm"
-              className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:border-destructive"
-              onClick={() => onDelete(agent)}
-              title={t("agentsPanel.delete")}
+              className="h-7 px-2 text-xs"
+              onClick={() => onBackup(agent)}
+              disabled={isBackingUp}
+              title={t("agentsPanel.backup")}
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <HardDriveDownload className="w-3.5 h-3.5" />
             </Button>
-          )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => onEdit(agent)}
+              title={t("agentsPanel.edit")}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </Button>
+            {!agent.isDefault && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:border-destructive"
+                onClick={() => onDelete(agent)}
+                title={t("agentsPanel.delete")}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Expandable model config section */}
+      {expanded && (
+        <div className="border-t border-border bg-muted/30 px-4 py-4">
+          <p className="text-xs font-medium text-muted-foreground mb-3">
+            {t("agentsPanel.modelLabel")}
+          </p>
+          {models.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <Select value={selectedModel} onValueChange={setSelectedModel}>
+                <SelectTrigger className="font-mono text-xs flex-1">
+                  <SelectValue placeholder={t("agentsPanel.selectModel")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE} className="font-mono text-xs italic text-muted-foreground">
+                    {t("agentsPanel.notSet")}（使用全局默认）
+                  </SelectItem>
+                  {models.map((m) => (
+                    <SelectItem key={m} value={m} className="font-mono text-xs">
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                disabled={!hasModelChange || isSavingModel}
+                onClick={() => onModelChange(agent, selectedModel === NONE_VALUE ? "" : selectedModel)}
+                className="h-9 px-3 flex-shrink-0"
+              >
+                {isSavingModel ? t("common.saving") : t("common.save")}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground italic">
+              {t("agentsPanel.noModelsHint")}
+            </p>
+          )}
+          {agent.workspace && (
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <p className="text-xs font-medium text-muted-foreground mb-1">{t("agentsPanel.workspaceLabel")}</p>
+              <p className="font-mono text-xs text-muted-foreground">{agent.workspace}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -744,30 +822,28 @@ export function AgentsPanel({ onAddOpen, addOpen: externalAddOpen, onAddOpenChan
     }
   };
 
-  const handleEdit = async (data: { name: string; emoji: string; model: string }) => {
+  const handleEdit = async (data: { name: string; emoji: string }) => {
     if (!editAgent) return;
     try {
-      const promises: Promise<unknown>[] = [];
-
-      if (data.name !== (editAgent.identityName || "") || data.emoji !== (editAgent.identityEmoji || "")) {
-        promises.push(
-          updateIdentityMutation.mutateAsync({
-            id: editAgent.id,
-            name: data.name || null,
-            emoji: data.emoji || null,
-          }),
-        );
-      }
-
-      if (data.model && data.model !== editAgent.model) {
-        promises.push(
-          updateModelMutation.mutateAsync({ id: editAgent.id, model: data.model }),
-        );
-      }
-
-      await Promise.all(promises);
+      await updateIdentityMutation.mutateAsync({
+        id: editAgent.id,
+        name: data.name || null,
+        emoji: data.emoji || null,
+      });
       toast.success(t("agentsPanel.editSuccess"));
       setEditAgent(null);
+    } catch (error) {
+      toast.error(t("agentsPanel.editFailed"), {
+        description: extractErrorMessage(error) || undefined,
+      });
+    }
+  };
+
+  const handleModelChange = async (agent: OpenClawAgentInfo, model: string) => {
+    if (!model) return;
+    try {
+      await updateModelMutation.mutateAsync({ id: agent.id, model });
+      toast.success(t("agentsPanel.editSuccess"));
     } catch (error) {
       toast.error(t("agentsPanel.editFailed"), {
         description: extractErrorMessage(error) || undefined,
@@ -844,10 +920,13 @@ export function AgentsPanel({ onAddOpen, addOpen: externalAddOpen, onAddOpenChan
               <AgentCard
                 key={agent.id}
                 agent={agent}
+                models={models}
                 onEdit={setEditAgent}
                 onDelete={setDeleteAgent}
                 onBackup={handleBackup}
+                onModelChange={handleModelChange}
                 isBackingUp={backingUpId === agent.id}
+                isSavingModel={updateModelMutation.isPending}
               />
             ))
           ) : (
@@ -888,10 +967,9 @@ export function AgentsPanel({ onAddOpen, addOpen: externalAddOpen, onAddOpenChan
       <EditAgentDialog
         open={editAgent !== null}
         agent={editAgent}
-        models={models}
         onClose={() => setEditAgent(null)}
         onConfirm={handleEdit}
-        isLoading={updateIdentityMutation.isPending || updateModelMutation.isPending}
+        isLoading={updateIdentityMutation.isPending}
       />
 
       {/* Delete Confirm */}

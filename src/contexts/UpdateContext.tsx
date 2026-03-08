@@ -97,7 +97,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
       console.error("检查更新失败:", err);
       setError(err instanceof Error ? err.message : "检查更新失败");
       setHasUpdate(false);
-      throw err; // 抛出错误让调用方处理
+      return false; // 网络失败等情况静默处理，不向外抛出
     } finally {
       setIsChecking(false);
       isCheckingRef.current = false;

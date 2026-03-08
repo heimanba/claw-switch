@@ -100,6 +100,9 @@ export function useOpenClawAgentsDefaults() {
   });
 }
 
+// Track last known service status to avoid logging on every poll
+let _lastServiceStatus: boolean | undefined = undefined;
+
 /**
  * Poll the OpenClaw gateway service status (port 18789).
  * Only active when `enabled` is true (i.e., when OpenClaw tab is visible).
@@ -109,7 +112,11 @@ export function useOpenClawServiceStatus(enabled: boolean) {
     queryKey: openclawKeys.serviceStatus,
     queryFn: async () => {
       const running = await openclawApi.getServiceStatus();
-      serviceLogger.state("服务状态", { running });
+      // Only log when status actually changes
+      if (running !== _lastServiceStatus) {
+        serviceLogger.state("服务状态", { running });
+        _lastServiceStatus = running;
+      }
       return running;
     },
     enabled,
