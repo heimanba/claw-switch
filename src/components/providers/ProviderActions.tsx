@@ -7,10 +7,10 @@ import {
   Minus,
   Play,
   Plus,
+  Star,
   Terminal,
   // TestTube2, // Hidden: stream check feature disabled
   Trash2,
-  Zap,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -204,23 +204,15 @@ export function ProviderActions({
 
   return (
     <div className="flex items-center gap-1.5">
-      {appId === "openclaw" && isInConfig && onSetAsDefault && (
+      {appId === "openclaw" && isInConfig && onSetAsDefault && !isDefaultModel && (
         <Button
-          size="sm"
-          variant={isDefaultModel ? "secondary" : "default"}
-          onClick={isDefaultModel ? undefined : onSetAsDefault}
-          disabled={isDefaultModel}
-          className={cn(
-            "w-fit px-2.5",
-            isDefaultModel
-              ? "bg-gray-200 text-muted-foreground dark:bg-gray-700 opacity-60 cursor-not-allowed"
-              : "bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700",
-          )}
+          size="icon"
+          variant="ghost"
+          onClick={onSetAsDefault}
+          title={t("provider.setAsDefault", { defaultValue: "设为默认" })}
+          className={cn(iconButtonClass, "hover:text-amber-500")}
         >
-          <Zap className="h-4 w-4" />
-          {isDefaultModel
-            ? t("provider.isDefault", { defaultValue: "当前默认" })
-            : t("provider.setAsDefault", { defaultValue: "设为默认" })}
+          <Star className="h-4 w-4" />
         </Button>
       )}
 

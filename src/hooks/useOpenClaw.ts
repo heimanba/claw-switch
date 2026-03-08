@@ -7,7 +7,6 @@ import type {
   OpenClawToolsConfig,
   OpenClawAgentsDefaults,
 } from "@/types";
-
 /**
  * Centralized query keys for all OpenClaw-related queries.
  * Import this from any file that needs to invalidate OpenClaw caches.
@@ -20,6 +19,7 @@ export const openclawKeys = {
   env: ["openclaw", "env"] as const,
   tools: ["openclaw", "tools"] as const,
   agentsDefaults: ["openclaw", "agentsDefaults"] as const,
+  agents: ["openclaw", "agents"] as const,
   serviceStatus: ["openclaw", "serviceStatus"] as const,
   channels: ["openclaw", "channels"] as const,
 };
@@ -209,5 +209,135 @@ export function useOpenClawChannels(enabled: boolean) {
     queryFn: () => openclawApi.getChannelsConfig(),
     enabled,
     staleTime: 10_000,
+  });
+}
+
+// ============================================================
+// Agent Instance Hooks
+// ============================================================
+
+/**
+ * Query all Agent instances from ~/.openclaw/agents/.
+ */
+export function useOpenClawAgents() {
+  return useQuery({
+    queryKey: openclawKeys.agents,
+    queryFn: () => openclawApi.listAgents(),
+    staleTime: 10_000,
+  });
+}
+
+/**
+ * Add a new Agent instance.
+ */
+export function useAddAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      name,
+      model,
+      workspace,
+    }: {
+      name: string;
+      model?: string;
+      workspace?: string;
+    }) => {
+      agentsLogger.action("创建 Agent", { name, model });
+      return openclawApi.addAgent(name, model, workspace);
+    },
+    onSuccess: () => {
+      agentsLogger.info("✅ Agent 已创建");
+      queryClient.invalidateQueries({ queryKey: openclawKeys.agents });
+    },
+    onError: (error) => {
+      agentsLogger.error("❌ 创建 Agent 失败", error);
+    },
+  });
+}
+
+/**
+ * Delete an Agent instance.
+ */
+export function useDeleteAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => {
+      agentsLogger.action("删除 Agent", { id });
+      return openclawApi.deleteAgent(id);
+    },
+    onSuccess: () => {
+      agentsLogger.info("✅ Agent 已删除");
+      queryClient.invalidateQueries({ queryKey: openclawKeys.agents });
+    },
+    onError: (error) => {
+      agentsLogger.error("❌ 删除 Agent 失败", error);
+    },
+  });
+}
+
+/**
+ * Update Agent identity (name and emoji).
+ */
+export function useUpdateAgentIdentity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      name,
+      emoji,
+    }: {
+      id: string;
+      name: string | null;
+      emoji: string | null;
+    }) => {
+      agentsLogger.action("更新 Agent 身份", { id, name, emoji });
+      return openclawApi.updateAgentIdentity(id, name, emoji);
+    },
+    onSuccess: () => {
+      agentsLogger.info("✅ Agent 身份已更新");
+      queryClient.invalidateQueries({ queryKey: openclawKeys.agents });
+    },
+    onError: (error) => {
+      agentsLogger.error("❌ 更新 Agent 身份失败", error);
+    },
+  });
+}
+
+/**
+ * Update Agent default model.
+ */
+export function useUpdateAgentModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, model }: { id: string; model: string }) => {
+      agentsLogger.action("更新 Agent 模型", { id, model });
+      return openclawApi.updateAgentModel(id, model);
+    },
+    onSuccess: () => {
+      agentsLogger.info("✅ Agent 模型已更新");
+      queryClient.invalidateQueries({ queryKey: openclawKeys.agents });
+      queryClient.invalidateQueries({ queryKey: openclawKeys.agentsDefaults });
+    },
+    onError: (error) => {
+      agentsLogger.error("❌ 更新 Agent 模型失败", error);
+    },
+  });
+}
+
+/**
+ * Backup an Agent instance.
+ */
+export function useBackupAgent() {
+  return useMutation({
+    mutationFn: (id: string) => {
+      agentsLogger.action("备份 Agent", { id });
+      return openclawApi.backupAgent(id);
+    },
+    onSuccess: (zipPath) => {
+      agentsLogger.info("✅ Agent 备份完成", { zipPath });
+    },
+    onError: (error) => {
+      agentsLogger.error("❌ 备份 Agent 失败", error);
+    },
   });
 }

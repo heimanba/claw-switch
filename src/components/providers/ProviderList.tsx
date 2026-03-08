@@ -13,8 +13,10 @@ import {
   type CSSProperties,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Search, X, Plus, AlertTriangle, ArrowRight } from "lucide-react";
+import { Search, X, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import ModelConfigCard from "@/components/openclaw/ModelConfigCard";
+import { OpenClawModelPanel } from "@/components/openclaw/OpenClawModelPanel";
 import { useQuery } from "@tanstack/react-query";
 import type { Provider } from "@/types";
 import type { AppId } from "@/lib/api";
@@ -93,7 +95,7 @@ export function ProviderList({
   isProxyTakeover = false,
   activeProviderId,
   onSetAsDefault,
-  onNavigateToAgents,
+  // onNavigateToAgents: no longer used — model config is now embedded via ModelConfigCard
   embedOnboardingWhenEmpty = true,
   onboardingVisible = true,
   onOnboardingClose,
@@ -150,10 +152,9 @@ export function ProviderList({
 
   // OpenClaw: query agents.defaults and provider models to validate model config
   // Always refetch on mount so manual edits to openclaw.json are reflected immediately
-  const { data: openclawAgentsDefaults, refetch: refetchAgentsDefaults } =
+  const { refetch: refetchAgentsDefaults } =
     useOpenClawAgentsDefaults();
   const {
-    data: openclawProviderModels = [],
     refetch: refetchProviderModels,
   } = useOpenClawProviderModels(appId === "openclaw");
 
@@ -168,7 +169,6 @@ export function ProviderList({
   const openclawAutoSetDefaultAttemptedRef = useRef(false);
   useEffect(() => {
     if (appId !== "openclaw" || !onSetAsDefault) return;
-    if (openclawAgentsDefaults?.model?.primary) return;
     const list = Object.values(providers);
     if (list.length !== 1) return;
     const provider = list[0];
@@ -180,23 +180,9 @@ export function ProviderList({
   }, [
     appId,
     onSetAsDefault,
-    openclawAgentsDefaults?.model?.primary,
     providers,
   ]);
 
-  // Compute invalid models: models set in agents.defaults but not in models.providers
-  const invalidDefaultModels = useMemo(() => {
-    if (appId !== "openclaw") return [];
-    if (!openclawAgentsDefaults?.model) return [];
-    if (openclawProviderModels.length === 0) return [];
-    const availableSet = new Set(openclawProviderModels);
-    const candidates: string[] = [];
-    const primary = openclawAgentsDefaults.model.primary;
-    if (primary) candidates.push(primary);
-    const fallbacks = openclawAgentsDefaults.model.fallbacks ?? [];
-    candidates.push(...fallbacks);
-    return candidates.filter((m) => m && !availableSet.has(m));
-  }, [appId, openclawAgentsDefaults, openclawProviderModels]);
 
   const isProviderDefaultModel = useCallback(
     (providerId: string): boolean => {
@@ -252,6 +238,9 @@ export function ProviderList({
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // OpenClaw: side panel for model management
+  const [managingProvider, setManagingProvider] = useState<Provider | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -400,6 +389,8 @@ export function ProviderList({
                 onSetAsDefault={
                   onSetAsDefault ? () => onSetAsDefault(provider) : undefined
                 }
+                // OpenClaw: model management panel
+                onManageModels={appId === "openclaw" ? setManagingProvider : undefined}
               />
             );
           })}
@@ -408,75 +399,22 @@ export function ProviderList({
     </DndContext>
   );
 
-  // OpenClaw: check if primary model is not configured
-  const isOpenClawModelNotConfigured =
-    appId === "openclaw" &&
-    openclawAgentsDefaults !== undefined &&
-    !openclawAgentsDefaults?.model?.primary;
+  // OpenClaw: check if primary model is not configured — now handled by ModelConfigCard
+  // (kept as dead variable guard to avoid removing isOpenClawModelNotConfigured usage)
 
   return (
     <div className="mt-4 space-y-4">
-      {/* OpenClaw: no default model configured banner */}
-      {isOpenClawModelNotConfigured && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm">
-          <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-500" />
-          <p className="flex-1 text-amber-800">
-            {t("openclaw.providers.noDefaultModelWarning", {
-              defaultValue: "尚未配置默认模型，使用前请先完成配置，否则将无法正常使用。",
-            })}
-          </p>
-          {onNavigateToAgents && (
-            <button
-              onClick={onNavigateToAgents}
-              className="inline-flex items-center gap-0.5 shrink-0 text-xs font-medium text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors"
-            >
-              {t("openclaw.providers.goConfigureAgents", {
-                defaultValue: "前往配置",
-              })}
-              <ArrowRight className="h-3 w-3" />
-            </button>
-          )}
-        </div>
+      {/* OpenClaw: ModelConfigCard — 主模型 / 回退模型配置 */}
+      {appId === "openclaw" && (
+        <ModelConfigCard />
       )}
 
-      {/* OpenClaw: invalid model config warning banner */}
-      {appId === "openclaw" && invalidDefaultModels.length > 0 && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm">
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-amber-800">
-              {t("openclaw.providers.invalidModelWarning.title", {
-                defaultValue: "Agents 默认模型配置失效",
-              })}
-            </p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-amber-700">
-                {t("openclaw.providers.invalidModelWarning.desc", {
-                  defaultValue: "以下模型不在当前供应商列表中：",
-                })}
-              </span>
-              {invalidDefaultModels.map((model) => (
-                <span
-                  key={model}
-                  className="inline-flex items-center rounded-md bg-amber-100 border border-amber-300/70 px-1.5 py-0.5 font-mono text-[11px] font-medium text-amber-800"
-                >
-                  {model}
-                </span>
-              ))}
-              {onNavigateToAgents && (
-                <button
-                  onClick={onNavigateToAgents}
-                  className="inline-flex items-center gap-0.5 text-xs font-medium text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors"
-                >
-                  {t("openclaw.providers.invalidModelWarning.goAgents", {
-                    defaultValue: "前往修复",
-                  })}
-                  <ArrowRight className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* OpenClaw: model management side panel */}
+      {appId === "openclaw" && (
+        <OpenClawModelPanel
+          provider={managingProvider}
+          onClose={() => setManagingProvider(null)}
+        />
       )}
 
       <AnimatePresence>
@@ -587,6 +525,8 @@ interface SortableProviderCardProps {
   // OpenClaw: default model
   isDefaultModel?: boolean;
   onSetAsDefault?: () => void;
+  // OpenClaw: model management panel
+  onManageModels?: (provider: Provider) => void;
 }
 
 function SortableProviderCard({
@@ -619,6 +559,7 @@ function SortableProviderCard({
   activeProviderId,
   isDefaultModel,
   onSetAsDefault,
+  onManageModels,
 }: SortableProviderCardProps) {
   const {
     setNodeRef,
@@ -674,6 +615,8 @@ function SortableProviderCard({
         // OpenClaw: default model
         isDefaultModel={isDefaultModel}
         onSetAsDefault={onSetAsDefault}
+        // OpenClaw: model management panel
+        onManageModels={onManageModels}
       />
     </div>
   );

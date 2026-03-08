@@ -6,7 +6,6 @@ import {
   FolderOpen,
   KeyRound,
   Shield,
-  Cpu,
   Users,
   FlaskConical,
   MessageCircle,
@@ -14,6 +13,7 @@ import {
   ChevronDown,
   Moon,
   Sun,
+  Bot,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
@@ -71,6 +71,11 @@ interface MenuItem {
   visible?: boolean;
 }
 
+interface MenuGroup {
+  label?: string;
+  items: MenuItem[];
+}
+
 export function Sidebar({
   currentView,
   activeApp,
@@ -93,7 +98,6 @@ export function Sidebar({
   };
 
   const {
-    isRunning: isProxyRunning,
     takeoverStatus,
   } = useProxyStatus();
 
@@ -102,50 +106,79 @@ export function Sidebar({
   const isOpenClaw = activeApp === 'openclaw';
   const { data: isOpenClawRunning } = useOpenClawServiceStatus(isOpenClaw);
 
-  // 根据当前应用决定功能菜单项
-  const getAppMenuItems = (): MenuItem[] => {
+  // 根据当前应用决定功能菜单分组
+  const getMenuGroups = (): MenuGroup[] => {
     if (activeApp === 'openclaw') {
       return [
-        { id: 'providers', label: t('providers.title', { defaultValue: '供应商配置' }), icon: Users },
-        { id: 'workspace', label: t('workspace.title', { defaultValue: '工作区文件' }), icon: FolderOpen },
-        { id: 'openclawEnv', label: t('openclaw.env.title', { defaultValue: '环境变量' }), icon: KeyRound },
-        { id: 'openclawTools', label: t('openclaw.tools.title', { defaultValue: '核心工具' }), icon: Shield },
-        { id: 'openclawAgents', label: t('openclaw.agents.title', { defaultValue: '智能体' }), icon: Cpu },
-        { id: 'openclawTesting', label: t('openclaw.testing.title', { defaultValue: '系统体检' }), icon: FlaskConical },
-        { id: 'openclawChannels', label: t('openclaw.channels.title', { defaultValue: '消息渠道' }), icon: MessageCircle },
-        { id: 'openclawLogs', label: t('openclaw.logs.title', { defaultValue: '服务日志' }), icon: Terminal },
-        { id: 'sessions', label: t('sessionManager.title', { defaultValue: '会话记录' }), icon: History },
+        {
+          // 无标签，概览单独一项
+          items: [
+            { id: 'dashboard', label: t('overview.menuTitle', { defaultValue: '概览' }), icon: LayoutDashboard },
+          ],
+        },
+        {
+          label: t('sidebar.group.config', { defaultValue: '配置' }),
+          items: [
+            { id: 'providers', label: t('openclaw.providers.title', { defaultValue: '模型配置' }), icon: Users },
+            { id: 'openclawTools', label: t('openclaw.tools.title', { defaultValue: '工具权限' }), icon: Shield },
+            { id: 'openclawEnv', label: t('openclaw.env.title', { defaultValue: '环境变量' }), icon: KeyRound },
+            { id: 'openclawAgents', label: t('openclaw.agents.defaultConfig', { defaultValue: 'Agent 管理' }), icon: Settings },
+          ],
+        },
+        {
+          label: t('sidebar.group.manage', { defaultValue: '管理' }),
+          items: [
+            { id: 'agents', label: t('agentsPanel.menuTitle', { defaultValue: 'Agent 管理' }), icon: Bot },
+            { id: 'workspace', label: t('workspace.title', { defaultValue: '文件管理' }), icon: FolderOpen },
+            { id: 'sessions', label: t('sessionManager.title', { defaultValue: '会话管理' }), icon: History },
+          ],
+        },
+        {
+          label: t('sidebar.group.ops', { defaultValue: '运维' }),
+          items: [
+            { id: 'openclawChannels', label: t('openclaw.channels.title', { defaultValue: '消息渠道' }), icon: MessageCircle },
+            { id: 'openclawTesting', label: t('openclaw.testing.title', { defaultValue: '系统体检' }), icon: FlaskConical },
+            { id: 'openclawLogs', label: t('openclaw.logs.title', { defaultValue: '服务日志' }), icon: Terminal },
+          ],
+        },
+        {
+          label: t('sidebar.group.system', { defaultValue: '系统' }),
+          items: [
+            { id: 'settings', label: t('settings.title', { defaultValue: '设置' }), icon: Settings },
+          ],
+        },
       ];
     }
 
-    // 常规应用的菜单项
-    const baseItems: MenuItem[] = [
+    // 常规应用：保留原有扁平结构，仅做简单分组
+    const configItems: MenuItem[] = [
       { id: 'providers', label: t('providers.title', { defaultValue: '供应商配置' }), icon: Users },
       { id: 'skills', label: t('skills.title', { defaultValue: '技能管理' }), icon: Wrench },
-      // { id: 'prompts', label: t('prompts.title', { defaultValue: '提示词' }), icon: Book },
-      // { id: 'mcp', label: t('mcp.title', { defaultValue: 'MCP 服务' }), icon: McpIcon },  // MCP 管理已隐藏
     ];
 
-    // 支持会话管理的应用
     const hasSessionSupport = ['qwen', 'claude', 'codex', 'opencode', 'openclaw', 'gemini'].includes(activeApp);
     if (hasSessionSupport) {
-      baseItems.push({ id: 'sessions', label: t('sessionManager.title', { defaultValue: '会话管理' }), icon: History });
+      configItems.push({ id: 'sessions', label: t('sessionManager.title', { defaultValue: '会话管理' }), icon: History });
     }
 
-    return baseItems;
+    return [
+      {
+        items: [
+          { id: 'dashboard', label: t('overview.menuTitle', { defaultValue: '概览' }), icon: LayoutDashboard },
+        ],
+      },
+      {
+        items: configItems,
+      },
+      {
+        items: [
+          { id: 'settings', label: t('settings.title', { defaultValue: '设置' }), icon: Settings },
+        ],
+      },
+    ];
   };
 
-  const globalMenuItems: MenuItem[] = [
-    { id: 'dashboard', label: t('overview.menuTitle', { defaultValue: '概览' }), icon: LayoutDashboard },
-  ];
-
-  const settingsMenuItem: MenuItem = { 
-    id: 'settings', 
-    label: t('settings.title', { defaultValue: '设置' }), 
-    icon: Settings 
-  };
-
-  const appMenuItems = getAppMenuItems();
+  const menuGroups = getMenuGroups();
 
   const renderMenuItem = (item: MenuItem) => {
     const isActive = currentView === item.id;
@@ -283,11 +316,20 @@ export function Sidebar({
 
       {/* 功能菜单 */}
       <nav className="flex-1 py-2 px-2 overflow-y-auto">
-        <ul className="space-y-0.5">
-          {globalMenuItems.map((item) => renderMenuItem(item))}
-          {appMenuItems.map((item) => renderMenuItem(item))}
-          {renderMenuItem(settingsMenuItem)}
-        </ul>
+        <div className="space-y-3">
+          {menuGroups.map((group, groupIndex) => (
+            <div key={groupIndex}>
+              {group.label && (
+                <p className="text-[10px] font-medium text-text-tertiary uppercase tracking-widest px-2 mb-1 select-none">
+                  {group.label}
+                </p>
+              )}
+              <ul className="space-y-0.5">
+                {group.items.map((item) => renderMenuItem(item))}
+              </ul>
+            </div>
+          ))}
+        </div>
       </nav>
 
       {/* 底部状态和代理控制 */}
@@ -310,7 +352,7 @@ export function Sidebar({
             <div className="flex items-center gap-2">
               <div className={cn(
                 'w-2 h-2 rounded-full flex-shrink-0',
-                isOpenClawRunning ? 'bg-status-success animate-pulse-soft' : 'bg-text-tertiary'
+                isOpenClawRunning ? 'bg-status-success animate-pulse-soft' : 'bg-orange-400'
               )} />
               <span className="text-xs text-text-muted">
                 {isOpenClawRunning

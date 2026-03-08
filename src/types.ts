@@ -516,6 +516,16 @@ export interface OpenClawAgentsDefaults {
   [key: string]: unknown; // preserve unknown fields
 }
 
+// OpenClaw Agent 实例信息（对应 ~/.openclaw/agents/<id>/）
+export interface OpenClawAgentInfo {
+  id: string;
+  isDefault: boolean;
+  identityName: string | null;
+  identityEmoji: string | null;
+  model: string | null;
+  workspace: string | null;
+}
+
 // OpenClaw env 配置（openclaw.json 的 env 节点）
 export interface OpenClawEnvConfig {
   [key: string]: unknown;

@@ -138,6 +138,7 @@ const OPENCLAW_ONLY_VIEWS = new Set<View>([
   "openclawEnv",
   "openclawTools",
   "openclawAgents",
+  "agents",
   "openclawTesting",
   "openclawChannels",
 ]);
@@ -176,6 +177,7 @@ function App() {
   const [activeApp, setActiveApp] = useState<AppId>(getInitialApp);
   const [currentView, setCurrentView] = useState<View>(getInitialView);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
+  const [agentsAddOpen, setAgentsAddOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   // 来自诊断页跳转到环境变量页的标记
   const [envFromDiagnostics, setEnvFromDiagnostics] = useState(false);
@@ -273,7 +275,7 @@ function App() {
   } = useProviderActions(activeApp, {
     onNavigateToAgents:
       activeApp === "openclaw"
-        ? () => setCurrentView("openclawAgents")
+        ? () => { setCurrentView("openclawAgents"); }
         : undefined,
   });
 
@@ -832,7 +834,11 @@ function App() {
         case "agents":
           return (
             <div className="flex-1 min-h-0 overflow-y-auto">
-              <AgentsPanel onOpenChange={() => setCurrentView("providers")} />
+              <AgentsPanel
+                onOpenChange={() => setCurrentView("providers")}
+                addOpen={agentsAddOpen}
+                onAddOpenChange={setAgentsAddOpen}
+              />
             </div>
           );
         case "universal":
@@ -963,7 +969,7 @@ function App() {
                     }
                     onNavigateToAgents={
                       activeApp === "openclaw"
-                        ? () => setCurrentView("openclawAgents")
+                        ? () => { setCurrentView("openclawAgents"); }
                         : undefined
                     }
                     embedOnboardingWhenEmpty={true}
@@ -1042,6 +1048,24 @@ function App() {
         );
       case "skills":
         return null;
+      case "agents":
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={iconBtnClass}
+                  onClick={() => setAgentsAddOpen(true)}
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {t("agentsPanel.addAgent", { defaultValue: "新建 Agent" })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
       case "providers":
         return (
           <TooltipProvider>

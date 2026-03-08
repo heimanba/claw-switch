@@ -52,7 +52,7 @@ export function Header({ currentView, activeApp, children, className }: HeaderPr
       case 'mcp':
         return t('mcp.unifiedPanel.title', { defaultValue: 'MCP 服务配置' });
       case 'agents':
-        return t('agents.title', { defaultValue: '智能体管理' });
+        return t('agents.title', { defaultValue: 'Agent 管理' });
       case 'universal':
         return t('universalProvider.title', { defaultValue: '统一供应商' });
       case 'sessions':

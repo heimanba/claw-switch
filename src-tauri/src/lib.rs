@@ -1081,6 +1081,13 @@ pub fn run() {
             commands::set_openclaw_model_catalog,
             commands::get_openclaw_agents_defaults,
             commands::set_openclaw_agents_defaults,
+            // Agent Instance Management
+            commands::list_agents,
+            commands::add_agent,
+            commands::delete_agent,
+            commands::update_agent_identity,
+            commands::update_agent_model,
+            commands::backup_agent,
             commands::get_openclaw_env,
             commands::set_openclaw_env,
             commands::get_openclaw_tools,

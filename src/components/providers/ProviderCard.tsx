@@ -1,11 +1,11 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { GripVertical, ChevronDown, ChevronUp } from "lucide-react";
+import { GripVertical, ChevronDown, ChevronUp, Layers, Star } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
   DraggableAttributes,
   DraggableSyntheticListeners,
 } from "@dnd-kit/core";
-import type { Provider } from "@/types";
+import type { Provider, OpenClawProviderConfig } from "@/types";
 import type { AppId } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ProviderActions } from "@/components/providers/ProviderActions";
@@ -56,6 +56,8 @@ interface ProviderCardProps {
   liveConfigExists?: boolean;
   // CLI 是否已安装（未安装时允许删除"使用中"的供应商）
   isCliInstalled?: boolean;
+  // OpenClaw: open model management side panel
+  onManageModels?: (provider: Provider) => void;
 }
 
 const extractApiUrl = (provider: Provider, fallbackText: string) => {
@@ -122,6 +124,7 @@ export function ProviderCard({
   onSetAsDefault,
   liveConfigExists = true,
   isCliInstalled = true,
+  onManageModels,
 }: ProviderCardProps) {
   const { t } = useTranslation();
 
@@ -411,6 +414,66 @@ export function ProviderCard({
           />
         </div>
       )}
+
+      {/* OpenClaw: model summary row */}
+      {appId === "openclaw" && (() => {
+        const cfg = provider.settingsConfig as OpenClawProviderConfig | undefined;
+        const modelList = Array.isArray(cfg?.models) ? cfg.models : [];
+        const MAX_SHOW = 3;
+        const shown = modelList.slice(0, MAX_SHOW);
+        const extra = modelList.length - MAX_SHOW;
+        // 只显示模型 ID 中最后一段（去掉 provider/ 前缀），完整路径保留在 tooltip
+        const shortName = (id: string) => id.includes("/") ? id.split("/").pop()! : id;
+        return (
+          <div className="mt-3 pt-3 border-t border-border-subtle flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+              <Layers className="w-3 h-3 text-text-muted flex-shrink-0" />
+              {modelList.length === 0 ? (
+                <span className="text-xs text-text-muted">
+                  {t("openclaw.panel.noModels", { defaultValue: "暂无模型" })}
+                </span>
+              ) : (
+                <>
+                  {shown.map((m, i) => (
+                    <span
+                      key={m.id || i}
+                      className={cn(
+                        "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-mono border",
+                        isDefaultModel && i === 0
+                          ? "bg-amber-50 border-amber-300/60 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                          : "bg-bg-secondary border-border-subtle text-text-muted",
+                      )}
+                      title={m.id}
+                    >
+                      {isDefaultModel && i === 0 && (
+                        <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500 flex-shrink-0" />
+                      )}
+                      {shortName(m.id || m.name)}
+                    </span>
+                  ))}
+                  {extra > 0 && (
+                    <span className="text-[10px] text-text-muted">
+                      +{extra}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+            {onManageModels && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onManageModels(provider);
+                }}
+                className="flex-shrink-0 text-[10px] text-accent hover:underline cursor-pointer whitespace-nowrap"
+              >
+                {t("openclaw.panel.manageModels", { defaultValue: "管理模型" })}
+              </button>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

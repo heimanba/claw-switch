@@ -220,6 +220,64 @@ pub fn set_openclaw_agents_defaults(
 }
 
 // ============================================================================
+// Agent Instance Management Commands
+// ============================================================================
+
+/// 列出所有 Agent 实例
+#[tauri::command]
+pub fn list_agents() -> Result<Vec<openclaw_config::OpenClawAgentInfo>, String> {
+    openclaw_config::list_agents().map_err(|e| e.to_string())
+}
+
+/// 创建新 Agent 实例
+#[tauri::command]
+pub fn add_agent(
+    name: String,
+    model: Option<String>,
+    workspace: Option<String>,
+) -> Result<(), String> {
+    openclaw_config::add_agent(
+        &name,
+        model.as_deref(),
+        workspace.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// 删除 Agent 实例
+#[tauri::command]
+pub fn delete_agent(id: String) -> Result<(), String> {
+    openclaw_config::delete_agent(&id).map_err(|e| e.to_string())
+}
+
+/// 更新 Agent 身份信息（名称和 emoji）
+#[tauri::command]
+pub fn update_agent_identity(
+    id: String,
+    name: Option<String>,
+    emoji: Option<String>,
+) -> Result<(), String> {
+    openclaw_config::update_agent_identity(&id, name.as_deref(), emoji.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// 更新 Agent 默认模型
+#[tauri::command]
+pub fn update_agent_model(id: String, model: String) -> Result<(), String> {
+    openclaw_config::update_agent_model(&id, &model).map_err(|e| e.to_string())
+}
+
+/// 备份 Agent（打包为 zip，返回文件路径）
+#[tauri::command]
+pub async fn backup_agent(id: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        openclaw_config::backup_agent(&id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ============================================================================
 // Env Configuration Commands
 // ============================================================================
 

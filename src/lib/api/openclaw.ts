@@ -5,6 +5,7 @@ import type {
   OpenClawAgentsDefaults,
   OpenClawEnvConfig,
   OpenClawToolsConfig,
+  OpenClawAgentInfo,
 } from "@/types";
 
 /**
@@ -73,6 +74,60 @@ export const openclawApi = {
    */
   async setAgentsDefaults(defaults: OpenClawAgentsDefaults): Promise<void> {
     return await invoke("set_openclaw_agents_defaults", { defaults });
+  },
+
+  // ============================================================
+  // Agent Instance Management
+  // ============================================================
+
+  /**
+   * 列出所有 Agent 实例
+   */
+  async listAgents(): Promise<OpenClawAgentInfo[]> {
+    return await invoke("list_agents");
+  },
+
+  /**
+   * 创建新 Agent 实例
+   */
+  async addAgent(name: string, model?: string, workspace?: string): Promise<void> {
+    return await invoke("add_agent", {
+      name,
+      model: model || null,
+      workspace: workspace || null,
+    });
+  },
+
+  /**
+   * 删除 Agent 实例
+   */
+  async deleteAgent(id: string): Promise<void> {
+    return await invoke("delete_agent", { id });
+  },
+
+  /**
+   * 更新 Agent 身份信息（名称和 emoji）
+   */
+  async updateAgentIdentity(
+    id: string,
+    name: string | null,
+    emoji: string | null,
+  ): Promise<void> {
+    return await invoke("update_agent_identity", { id, name, emoji });
+  },
+
+  /**
+   * 更新 Agent 默认模型
+   */
+  async updateAgentModel(id: string, model: string): Promise<void> {
+    return await invoke("update_agent_model", { id, model });
+  },
+
+  /**
+   * 备份 Agent（返回 zip 文件路径）
+   */
+  async backupAgent(id: string): Promise<string> {
+    return await invoke("backup_agent", { id });
   },
 
   // ============================================================

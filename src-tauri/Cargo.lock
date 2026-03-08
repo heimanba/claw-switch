@@ -769,6 +769,7 @@ dependencies = [
  "tower-http 0.5.2",
  "url",
  "uuid",
+ "walkdir",
  "webkit2gtk",
  "winreg 0.52.0",
  "zip 2.4.2",

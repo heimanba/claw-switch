@@ -1693,6 +1693,9 @@
     }
   },
   "openclaw": {
+    "providers": {
+      "title": "模型配置"
+    },
     "providerKey": "供应商标识",
     "providerKeyPlaceholder": "my-provider",
     "providerKeyHint": "配置文件中的唯一标识符，创建后无法修改，只能使用小写字母、数字和连字符",
@@ -2091,6 +2094,44 @@
   },
   "modelTest": {
     "testProvider": "测试模型"
+  },
+  "agentsPanel": {
+    "menuTitle": "Agent 管理",
+    "description": "创建和管理 OpenClaw 智能体，配置身份、模型和工作区",
+    "addAgent": "新建 Agent",
+    "addTitle": "新建 Agent",
+    "editTitle": "编辑 Agent",
+    "agentId": "Agent ID",
+    "agentIdPlaceholder": "例如：translator（小写字母、数字、连字符）",
+    "agentIdHint": "只能使用小写字母、数字、下划线和连字符，创建后无法修改",
+    "name": "名称",
+    "namePlaceholder": "例如：翻译助手",
+    "emoji": "Emoji",
+    "model": "模型",
+    "selectModel": "选择模型",
+    "workspace": "工作区路径",
+    "workspaceLabel": "工作区",
+    "workspacePlaceholder": "留空则自动创建（可选，绝对路径）",
+    "modelLabel": "模型",
+    "default": "默认",
+    "notSet": "未设置",
+    "edit": "编辑",
+    "delete": "删除",
+    "backup": "备份",
+    "deleteTitle": "删除 Agent",
+    "deleteMessage": "确定删除 Agent「{{id}}」？\n此操作将删除该 Agent 的所有数据，不可撤销。",
+    "empty": "暂无 Agent",
+    "idRequired": "请输入 Agent ID",
+    "idInvalid": "Agent ID 只能包含小写字母、数字、下划线和连字符",
+    "noModelsHint": "请先在供应商配置中添加模型",
+    "addSuccess": "Agent 已创建",
+    "addFailed": "创建 Agent 失败",
+    "editSuccess": "Agent 已更新",
+    "editFailed": "更新 Agent 失败",
+    "deleteSuccess": "Agent 已删除",
+    "deleteFailed": "删除 Agent 失败",
+    "backupSuccess": "备份完成",
+    "backupFailed": "备份失败"
   },
   "health": {
     "operational": "正常",

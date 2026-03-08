@@ -491,6 +491,412 @@ pub fn set_agents_defaults(defaults: &OpenClawAgentsDefaults) -> Result<(), AppE
 }
 
 // ============================================================================
+// Agent Instance Management
+// ============================================================================
+
+/// Agent 实例信息（从 ~/.openclaw/agents/<id>/ 目录读取）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenClawAgentInfo {
+    pub id: String,
+    pub is_default: bool,
+    pub identity_name: Option<String>,
+    pub identity_emoji: Option<String>,
+    pub model: Option<String>,
+    pub workspace: Option<String>,
+}
+
+/// 获取 agents 目录路径：~/.openclaw/agents/
+fn get_agents_dir() -> PathBuf {
+    get_openclaw_dir().join("agents")
+}
+
+/// 读取指定 agent 目录中的 identity.json（名称 / emoji）
+fn read_agent_identity(agent_dir: &std::path::Path) -> (Option<String>, Option<String>) {
+    let identity_path = agent_dir.join("identity.json");
+    if let Ok(content) = std::fs::read_to_string(&identity_path) {
+        if let Ok(v) = json5::from_str::<Value>(&content) {
+            let name = v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
+            let emoji = v.get("emoji").and_then(|e| e.as_str()).map(|s| s.to_string());
+            return (name, emoji);
+        }
+    }
+    (None, None)
+}
+
+/// 读取指定 agent 目录中的 openclaw.json（获取 model.primary）
+fn read_agent_model(agent_dir: &std::path::Path) -> Option<String> {
+    let config_path = agent_dir.join("openclaw.json");
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
+        if let Ok(v) = json5::from_str::<Value>(&content) {
+            return v
+                .get("agents")
+                .and_then(|a| a.get("defaults"))
+                .and_then(|d| d.get("model"))
+                .and_then(|m| m.get("primary"))
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_string());
+        }
+    }
+    None
+}
+
+/// 读取指定 agent 目录中的 openclaw.json（获取 workspace）
+fn read_agent_workspace(agent_dir: &std::path::Path) -> Option<String> {
+    let config_path = agent_dir.join("openclaw.json");
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
+        if let Ok(v) = json5::from_str::<Value>(&content) {
+            return v
+                .get("agents")
+                .and_then(|a| a.get("defaults"))
+                .and_then(|d| d.get("workspace"))
+                .and_then(|w| w.as_str())
+                .map(|s| s.to_string());
+        }
+    }
+    None
+}
+
+/// 列出所有 Agent 实例（~/.openclaw/agents/ 下各子目录）
+///
+/// 始终将 "main" 排在第一位并标记为默认。
+pub fn list_agents() -> Result<Vec<OpenClawAgentInfo>, AppError> {
+    let agents_dir = get_agents_dir();
+
+    let mut agents: Vec<OpenClawAgentInfo> = Vec::new();
+
+    // main agent（全局默认）始终存在，从主配置读取
+    let main_model = {
+        let config = read_openclaw_config()?;
+        config
+            .get("agents")
+            .and_then(|a| a.get("defaults"))
+            .and_then(|d| d.get("model"))
+            .and_then(|m| m.get("primary"))
+            .and_then(|p| p.as_str())
+            .map(|s| s.to_string())
+    };
+    let main_workspace = {
+        let config = read_openclaw_config()?;
+        config
+            .get("agents")
+            .and_then(|a| a.get("defaults"))
+            .and_then(|d| d.get("workspace"))
+            .and_then(|w| w.as_str())
+            .map(|s| s.to_string())
+    };
+
+    // main 的 identity 也可能在 agents/main/ 中
+    let main_agent_dir = agents_dir.join("main");
+    let (main_name, main_emoji) = if main_agent_dir.exists() {
+        read_agent_identity(&main_agent_dir)
+    } else {
+        (None, None)
+    };
+
+    agents.push(OpenClawAgentInfo {
+        id: "main".to_string(),
+        is_default: true,
+        identity_name: main_name,
+        identity_emoji: main_emoji,
+        model: main_model,
+        workspace: main_workspace,
+    });
+
+    // 读取 agents 子目录中的其他 agent
+    if agents_dir.exists() {
+        let mut entries: Vec<_> = std::fs::read_dir(&agents_dir)
+            .map_err(|e| AppError::io(&agents_dir, e))?
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .filter(|e| {
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str != "main"
+            })
+            .collect();
+
+        // 按目录名排序，保持稳定顺序
+        entries.sort_by_key(|e| e.file_name());
+
+        for entry in entries {
+            let dir_name = entry.file_name().to_string_lossy().to_string();
+            let agent_dir = entry.path();
+            let (identity_name, identity_emoji) = read_agent_identity(&agent_dir);
+            let model = read_agent_model(&agent_dir);
+            let workspace = read_agent_workspace(&agent_dir);
+
+            agents.push(OpenClawAgentInfo {
+                id: dir_name,
+                is_default: false,
+                identity_name,
+                identity_emoji,
+                model,
+                workspace,
+            });
+        }
+    }
+
+    Ok(agents)
+}
+
+/// 创建新 Agent（在 ~/.openclaw/agents/<id>/ 下创建目录和配置文件）
+pub fn add_agent(id: &str, model: Option<&str>, workspace: Option<&str>) -> Result<(), AppError> {
+    let agent_dir = get_agents_dir().join(id);
+    if agent_dir.exists() {
+        return Err(AppError::Config(format!("Agent '{}' 已存在", id)));
+    }
+
+    std::fs::create_dir_all(&agent_dir).map_err(|e| AppError::io(&agent_dir, e))?;
+
+    // 写入 openclaw.json（设置 model 和 workspace）
+    let mut agent_config = json!({
+        "agents": {
+            "defaults": {}
+        }
+    });
+
+    if let Some(m) = model {
+        if !m.is_empty() {
+            agent_config["agents"]["defaults"]["model"] = json!({
+                "primary": m
+            });
+        }
+    }
+
+    if let Some(ws) = workspace {
+        if !ws.is_empty() {
+            agent_config["agents"]["defaults"]["workspace"] = json!(ws);
+        }
+    }
+
+    let config_path = agent_dir.join("openclaw.json");
+    write_json_file(&config_path, &agent_config)?;
+
+    Ok(())
+}
+
+/// 删除 Agent（删除 ~/.openclaw/agents/<id>/ 目录）
+pub fn delete_agent(id: &str) -> Result<(), AppError> {
+    if id == "main" {
+        return Err(AppError::Config("不能删除默认 Agent".to_string()));
+    }
+
+    let agent_dir = get_agents_dir().join(id);
+    if !agent_dir.exists() {
+        return Err(AppError::Config(format!("Agent '{}' 不存在", id)));
+    }
+
+    std::fs::remove_dir_all(&agent_dir).map_err(|e| AppError::io(&agent_dir, e))?;
+
+    Ok(())
+}
+
+/// 更新 Agent 身份信息（名称和 emoji）
+///
+/// 写入 ~/.openclaw/agents/<id>/identity.json
+pub fn update_agent_identity(
+    id: &str,
+    name: Option<&str>,
+    emoji: Option<&str>,
+) -> Result<(), AppError> {
+    let agent_dir = if id == "main" {
+        get_agents_dir().join("main")
+    } else {
+        get_agents_dir().join(id)
+    };
+
+    std::fs::create_dir_all(&agent_dir).map_err(|e| AppError::io(&agent_dir, e))?;
+
+    let identity_path = agent_dir.join("identity.json");
+
+    // 读取已有 identity（保留其他字段）
+    let mut identity: Value = if identity_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&identity_path) {
+            json5::from_str(&content).unwrap_or(json!({}))
+        } else {
+            json!({})
+        }
+    } else {
+        json!({})
+    };
+
+    if let Some(n) = name {
+        if n.is_empty() {
+            identity.as_object_mut().map(|m| m.remove("name"));
+        } else {
+            identity["name"] = json!(n);
+        }
+    }
+
+    if let Some(e) = emoji {
+        if e.is_empty() {
+            identity.as_object_mut().map(|m| m.remove("emoji"));
+        } else {
+            identity["emoji"] = json!(e);
+        }
+    }
+
+    write_json_file(&identity_path, &identity)?;
+
+    Ok(())
+}
+
+/// 更新 Agent 的默认模型
+///
+/// 对 "main" agent：修改主配置 ~/.openclaw/openclaw.json 的 agents.defaults.model.primary
+/// 对其他 agent：修改 ~/.openclaw/agents/<id>/openclaw.json 的 agents.defaults.model.primary
+pub fn update_agent_model(id: &str, model: &str) -> Result<(), AppError> {
+    if id == "main" {
+        // 修改主配置
+        let mut config = read_openclaw_config()?;
+        ensure_agents_defaults_path(&mut config);
+        if config["agents"]["defaults"].get("model").is_none() {
+            config["agents"]["defaults"]["model"] = json!({ "primary": model });
+        } else {
+            config["agents"]["defaults"]["model"]["primary"] = json!(model);
+        }
+        write_openclaw_config(&config)
+    } else {
+        let agent_dir = get_agents_dir().join(id);
+        if !agent_dir.exists() {
+            return Err(AppError::Config(format!("Agent '{}' 不存在", id)));
+        }
+        let config_path = agent_dir.join("openclaw.json");
+
+        // 读取或初始化 agent 配置
+        let mut agent_config: Value = if config_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&config_path) {
+                json5::from_str(&content).unwrap_or(json!({}))
+            } else {
+                json!({})
+            }
+        } else {
+            json!({})
+        };
+
+        // 确保路径存在
+        if agent_config.get("agents").is_none() {
+            agent_config["agents"] = json!({});
+        }
+        if agent_config["agents"].get("defaults").is_none() {
+            agent_config["agents"]["defaults"] = json!({});
+        }
+        if agent_config["agents"]["defaults"].get("model").is_none() {
+            agent_config["agents"]["defaults"]["model"] = json!({ "primary": model });
+        } else {
+            agent_config["agents"]["defaults"]["model"]["primary"] = json!(model);
+        }
+
+        write_json_file(&config_path, &agent_config)?;
+        Ok(())
+    }
+}
+
+/// 备份 Agent（将 ~/.openclaw/agents/<id>/ 打包为 zip）
+///
+/// 返回生成的 zip 文件的绝对路径。
+pub fn backup_agent(id: &str) -> Result<String, AppError> {
+    use std::io::Write;
+
+    let agents_dir = get_agents_dir();
+    let agent_dir = if id == "main" {
+        // main agent 备份主配置文件和 agents/main 目录
+        get_openclaw_dir()
+    } else {
+        agents_dir.join(id)
+    };
+
+    if !agent_dir.exists() {
+        // main agent 允许目录不存在（直接备份 openclaw.json）
+        if id != "main" {
+            return Err(AppError::Config(format!("Agent '{}' 不存在", id)));
+        }
+    }
+
+    // 备份输出到 ~/.openclaw/backups/
+    let backup_dir = get_openclaw_dir().join("backups");
+    std::fs::create_dir_all(&backup_dir).map_err(|e| AppError::io(&backup_dir, e))?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let zip_name = format!("agent-{}-{}.zip", id, timestamp);
+    let zip_path = backup_dir.join(&zip_name);
+
+    let zip_file = std::fs::File::create(&zip_path).map_err(|e| AppError::io(&zip_path, e))?;
+    let mut zip = zip::ZipWriter::new(zip_file);
+    let options: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    if id == "main" {
+        // 仅备份主配置文件
+        let config_path = get_openclaw_config_path();
+        if config_path.exists() {
+            if let Ok(content) = std::fs::read(&config_path) {
+                zip.start_file("openclaw.json", options)
+                    .map_err(|e| AppError::Config(format!("zip 创建失败: {}", e)))?;
+                zip.write_all(&content)
+                    .map_err(|e| AppError::Config(format!("zip 写入失败: {}", e)))?;
+            }
+        }
+        // 同时备份 agents/main 目录（如果存在）
+        let main_dir = agents_dir.join("main");
+        if main_dir.exists() {
+            add_dir_to_zip(&mut zip, &main_dir, "agents/main", options)?;
+        }
+    } else {
+        add_dir_to_zip(&mut zip, &agent_dir, id, options)?;
+    }
+
+    zip.finish().map_err(|e| AppError::Config(format!("zip 完成失败: {}", e)))?;
+
+    Ok(zip_path.display().to_string())
+}
+
+/// 递归将目录内容写入 zip
+fn add_dir_to_zip(
+    zip: &mut zip::ZipWriter<std::fs::File>,
+    dir: &std::path::Path,
+    prefix: &str,
+    options: zip::write::SimpleFileOptions,
+) -> Result<(), AppError> {
+    use std::io::Write;
+
+    for entry in walkdir::WalkDir::new(dir).follow_links(false) {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        let relative = match path.strip_prefix(dir) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let zip_path = if relative.as_os_str().is_empty() {
+            prefix.to_string()
+        } else {
+            format!("{}/{}", prefix, relative.display())
+        };
+
+        if path.is_dir() {
+            // skip empty dir entries
+            continue;
+        }
+
+        if let Ok(content) = std::fs::read(path) {
+            zip.start_file(&zip_path, options)
+                .map_err(|e| AppError::Config(format!("zip 添加文件失败: {}", e)))?;
+            zip.write_all(&content)
+                .map_err(|e| AppError::Config(format!("zip 写入失败: {}", e)))?;
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================================
 // Env Configuration
 // ============================================================================
 
