@@ -39,8 +39,8 @@ interface ModelConfigCardProps {
   className?: string;
   /** 是否已添加 Coding Plan 供应商，用于 Banner 状态显示 */
   isCodingPlanAdded?: boolean;
-  /** 点击"一键添加全部模型"的回调，传入时显示 Banner */
-  onQuickAddCodingPlan?: () => void;
+  /** 点击"一键添加全部模型"的回调（传入用户填写的 API Key），传入时显示 Banner */
+  onQuickAddCodingPlan?: (apiKey: string) => void;
 }
 
 const ModelConfigCard: React.FC<ModelConfigCardProps> = ({ className, isCodingPlanAdded = false, onQuickAddCodingPlan }) => {
@@ -221,7 +221,6 @@ const ModelConfigCard: React.FC<ModelConfigCardProps> = ({ className, isCodingPl
                   <CodingPlanBanner
                     onQuickAdd={onQuickAddCodingPlan}
                     isAdded={isCodingPlanAdded}
-                    compact
                   />
                 </div>
               )}

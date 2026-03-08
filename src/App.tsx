@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { getDefaultVisibleApps } from "@/config/appConfig";
 import { checkAllEnvConflicts, checkEnvConflicts } from "@/lib/api/env";
+import { openclawProviderPresets } from "@/config/openclawProviderPresets";
 import { useProviderActions } from "@/hooks/useProviderActions";
 import { openclawKeys, useOpenClawServiceStatus, useStartOpenClawService } from "@/hooks/useOpenClaw";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
@@ -994,9 +995,21 @@ function App() {
                     }
                     onQuickAddCodingPlan={
                       activeApp === "openclaw"
-                        ? () => {
-                            setAddProviderInitialPresetId("openclaw-0");
-                            setIsAddOpen(true);
+                        ? async (apiKey: string) => {
+                            const preset = openclawProviderPresets[0]; // Coding Plan
+                            const providerKey = preset.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+                            const settingsConfig = { ...preset.settingsConfig, apiKey };
+                            const baseUrl = preset.settingsConfig.baseUrl;
+                            await addProvider({
+                              name: preset.name,
+                              websiteUrl: preset.websiteUrl,
+                              settingsConfig,
+                              icon: preset.icon,
+                              iconColor: preset.iconColor,
+                              providerKey,
+                              ...(preset.suggestedDefaults ? { suggestedDefaults: preset.suggestedDefaults } : {}),
+                              ...(baseUrl ? { meta: { custom_endpoints: { [baseUrl]: { url: baseUrl, addedAt: Date.now(), lastUsed: undefined } } } } : {}),
+                            });
                           }
                         : undefined
                     }

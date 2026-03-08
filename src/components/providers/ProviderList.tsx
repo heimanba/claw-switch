@@ -68,8 +68,8 @@ interface ProviderListProps {
   onSetAsDefault?: (provider: Provider) => void; // OpenClaw: set as default model
   /** OpenClaw: navigate to agents defaults panel */
   onNavigateToAgents?: () => void;
-  /** OpenClaw: 一键添加百炼 Coding Plan 预设 */
-  onQuickAddCodingPlan?: () => void;
+  /** OpenClaw: 一键添加百炼 Coding Plan 预设（传入用户填写的 API Key） */
+  onQuickAddCodingPlan?: (apiKey: string) => void;
   /** When false and no providers, show minimal empty state instead of OnboardingChecklist (use when onboarding is rendered above by parent) */
   embedOnboardingWhenEmpty?: boolean;
   /** 控制 OnboardingChecklist 是否显示（纯实时检测模式） */
