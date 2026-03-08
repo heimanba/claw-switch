@@ -30,6 +30,7 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
+  ExternalLink,
 } from "lucide-react";
 import JsonEditor from "@/components/JsonEditor";
 import { providersApi } from "@/lib/api";
@@ -1476,6 +1477,30 @@ export function QwenFormFields({
           <p className="text-xs text-muted-foreground/60">
             {t("qwen.envKeyHelperText")}
           </p>
+          {/* API Key 获取链接引导（仅百炼预设时显示） */}
+          {_shouldShowApiKeyLink && _websiteUrl && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>
+                {t("providerForm.apiKeyGuideHint", {
+                  defaultValue: "还没有 Key？",
+                })}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-auto p-0 text-xs text-primary hover:text-primary/80 hover:bg-transparent gap-1"
+                asChild
+              >
+                <a href={_websiteUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                  {t("providerForm.getApiKey", {
+                    defaultValue: "获取 API Key",
+                  })}
+                </a>
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* ── 模型设置区块（次级） ── */}
