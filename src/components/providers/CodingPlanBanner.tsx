@@ -142,47 +142,60 @@ export function CodingPlanBanner({ onQuickAdd, isAdded = false }: CodingPlanBann
 
         {/* 内联 API Key 输入区（展开时显示） */}
         {expanded && (
-          <div className="mb-3 flex items-center gap-2">
-            <div className="relative flex-1">
-              <Input
-                ref={inputRef}
-                type={showKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={t('apiKeyInput.placeholder', { defaultValue: '请输入 API Key' })}
-                className="h-8 text-xs pr-8 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus-visible:ring-white/30"
-              />
-              {apiKey && (
-                <button
-                  type="button"
-                  onClick={() => setShowKey(!showKey)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-white/40 hover:text-white/70 transition-colors"
-                >
-                  {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
-              )}
+          <div className="mb-3 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Input
+                  ref={inputRef}
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={t('apiKeyInput.placeholder', { defaultValue: '请输入 API Key' })}
+                  className="h-8 text-xs pr-8 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus-visible:ring-white/30"
+                />
+                {apiKey && (
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-white/40 hover:text-white/70 transition-colors"
+                  >
+                    {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                )}
+              </div>
+              <Button
+                size="sm"
+                onClick={handleSubmit}
+                disabled={!apiKey.trim()}
+                className="h-8 px-3 text-xs font-semibold flex-shrink-0"
+                style={{
+                  background: apiKey.trim() ? 'linear-gradient(135deg, #624AFF 0%, #4A6EFF 100%)' : 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  color: 'white',
+                }}
+              >
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setExpanded(false); setApiKey(''); }}
+                className="text-white/30 hover:text-white/60 text-xs transition-colors flex-shrink-0"
+              >
+                {t('common.cancel', { defaultValue: '取消' })}
+              </button>
             </div>
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!apiKey.trim()}
-              className="h-8 px-3 text-xs font-semibold flex-shrink-0"
-              style={{
-                background: apiKey.trim() ? 'linear-gradient(135deg, #624AFF 0%, #4A6EFF 100%)' : 'rgba(255,255,255,0.1)',
-                border: 'none',
-                color: 'white',
-              }}
+            {/* 获取 API Key 引导链接 */}
+            <a
+              href={CODING_PLAN_API_KEY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium transition-opacity hover:opacity-90"
+              style={{ color: '#7B9EFF' }}
             >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-            <button
-              type="button"
-              onClick={() => { setExpanded(false); setApiKey(''); }}
-              className="text-white/30 hover:text-white/60 text-xs transition-colors flex-shrink-0"
-            >
-              {t('common.cancel', { defaultValue: '取消' })}
-            </button>
+              <Key className="h-3 w-3" />
+              {t('codingPlan.getApiKeyHint', { defaultValue: '还没有 API Key？点此获取' })}
+            </a>
           </div>
         )}
 
