@@ -59,28 +59,28 @@ pub const AUTO_SUFFIX: &str = "auto";
 
 pub const TRAY_SECTIONS: [TrayAppSection; 3] = [
     TrayAppSection {
+        app_type: AppType::OpenClaw,
+        prefix: "openclaw_",
+        header_id: "openclaw_header",
+        empty_id: "openclaw_empty",
+        header_label: "OpenClaw",
+        log_name: "OpenClaw",
+    },
+    TrayAppSection {
+        app_type: AppType::Qwen,
+        prefix: "qwen_",
+        header_id: "qwen_header",
+        empty_id: "qwen_empty",
+        header_label: "Qwen Code",
+        log_name: "Qwen Code",
+    },
+    TrayAppSection {
         app_type: AppType::Claude,
         prefix: "claude_",
         header_id: "claude_header",
         empty_id: "claude_empty",
         header_label: "Claude",
         log_name: "Claude",
-    },
-    TrayAppSection {
-        app_type: AppType::Codex,
-        prefix: "codex_",
-        header_id: "codex_header",
-        empty_id: "codex_empty",
-        header_label: "Codex",
-        log_name: "Codex",
-    },
-    TrayAppSection {
-        app_type: AppType::Gemini,
-        prefix: "gemini_",
-        header_id: "gemini_header",
-        empty_id: "gemini_empty",
-        header_label: "Gemini",
-        log_name: "Gemini",
     },
 ];
 

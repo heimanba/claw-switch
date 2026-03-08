@@ -1828,7 +1828,7 @@
     },
     "channels": {
       "title": "消息渠道",
-      "description": "配置 Telegram、Discord、飞书等通知渠道"
+      "description": "配置 钉钉、飞书等通知渠道"
     },
     "agents": {
       "title": "Agents 配置",

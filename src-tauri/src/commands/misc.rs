@@ -381,11 +381,15 @@ fn get_extended_path() -> String {
             let nvm_alias = format!("{home_str}/.nvm/alias/default");
             if let Ok(ver) = std::fs::read_to_string(&nvm_alias) {
                 let ver = ver.trim().trim_start_matches('v');
-                if !ver.is_empty() {
+                // nvm default alias 可能是间接别名（如 "lts/hydrogen"），
+                // 需要递归解析，此处只处理直接版本号（包含数字的字符串）。
+                // 同时不将其插入到最前面，而是作为兜底，确保当前进程 PATH
+                // 中用户通过 nvm use / fnm use 等激活的版本保持最高优先级。
+                if !ver.is_empty() && ver.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
                     let p = format!("{home_str}/.nvm/versions/node/v{ver}/bin");
                     if std::path::Path::new(&p).exists() {
-                        // 插到最前，比当前 PATH 更优先（仅当 default alias 存在时）
-                        parts.insert(0, p);
+                        // 作为兜底追加，不覆盖当前进程 PATH 中已激活的版本
+                        parts.push(p);
                     }
                 }
             }

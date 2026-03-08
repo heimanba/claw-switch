@@ -2,7 +2,8 @@
  * 聊天页面 - 对接 OpenClaw Gateway
  * 支持：流式响应、Markdown 渲染、会话管理、快捷指令
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, Component } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
@@ -52,10 +53,12 @@ function escapeHtml(str: string): string {
 }
 
 function inlineFormat(text: string): string {
-  return text
+  // 先 escape 特殊 HTML 字符，再做 Markdown 转换，防止原始文本中的 <> 破坏 DOM
+  const escaped = escapeHtml(text)
+  return escaped
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`\n]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`)
+    .replace(/`([^`\n]+)`/g, (_, code) => `<code>${code}</code>`)
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:300px" />')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
       const safe = /^https?:|^mailto:/i.test(url.trim()) ? url : '#'
@@ -125,17 +128,55 @@ function renderMarkdown(text: string): string {
 
     if (inList) { result.push(`</${listType}>`); inList = false }
     if (line.trim() === '') { result.push(''); continue }
-    if (!line.startsWith('<')) { result.push(`<p>${inlineFormat(line)}</p>`) }
-    else { result.push(line) }
+    // 所有普通文本行都走 inlineFormat（内部已 escape），不直接透传 HTML
+    result.push(`<p>${inlineFormat(line)}</p>`)
   }
 
   if (inList) result.push(`</${listType}>`)
   return result.join('\n')
 }
 
+/** 安全渲染：捕获 renderMarkdown 异常，降级为转义后的纯文本 */
+function safeRenderMarkdown(text: string): string {
+  try {
+    const html = renderMarkdown(text)
+    return html
+  } catch {
+    // 渲染出错时，将整段文字 escape 后用 <pre> 包裹显示
+    return `<pre style="white-space:pre-wrap;word-break:break-word">${escapeHtml(text)}</pre>`
+  }
+}
+
+// ── Error Boundary：防止气泡渲染崩溃导致整个聊天页白屏 ──
+interface BubbleErrorBoundaryState { hasError: boolean }
+class BubbleErrorBoundary extends Component<{ children: ReactNode; fallback?: ReactNode }, BubbleErrorBoundaryState> {
+  constructor(props: { children: ReactNode; fallback?: ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError(): BubbleErrorBoundaryState {
+    return { hasError: true }
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[ChatPage] 气泡渲染错误:', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback ?? (
+        <div className="chat-bubble" style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+          内容渲染失败，请重试
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 function stripThinkingTags(text: string): string {
   return text
     .replace(/<\s*think(?:ing)?\s*>[\s\S]*?<\s*\/\s*think(?:ing)?\s*>/gi, '')
+    // 处理未闭合的 <think> / <thinking> 标签（去掉标签及之后所有内容）
+    .replace(/<\s*think(?:ing)?\s*>[\s\S]*/gi, '')
     .replace(/Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/gi, '')
     .trim()
 }
@@ -303,7 +344,7 @@ export function ChatPage() {
     }
     // finalize streaming bubble
     if (streamingBubbleRef.current && currentAiTextRef.current) {
-      streamingBubbleRef.current.innerHTML = renderMarkdown(currentAiTextRef.current)
+      streamingBubbleRef.current.innerHTML = safeRenderMarkdown(currentAiTextRef.current)
     }
     renderPendingRef.current = false
     lastRenderTimeRef.current = 0
@@ -387,7 +428,7 @@ export function ChatPage() {
           if (now - lastRenderTimeRef.current >= RENDER_THROTTLE) {
             lastRenderTimeRef.current = now
             if (streamingBubbleRef.current) {
-              streamingBubbleRef.current.innerHTML = renderMarkdown(currentAiTextRef.current)
+              streamingBubbleRef.current.innerHTML = safeRenderMarkdown(currentAiTextRef.current)
               scrollToBottom()
             }
           } else {
@@ -396,7 +437,7 @@ export function ChatPage() {
               renderPendingRef.current = false
               lastRenderTimeRef.current = performance.now()
               if (streamingBubbleRef.current) {
-                streamingBubbleRef.current.innerHTML = renderMarkdown(currentAiTextRef.current)
+                streamingBubbleRef.current.innerHTML = safeRenderMarkdown(currentAiTextRef.current)
                 scrollToBottom()
               }
             })
@@ -409,7 +450,8 @@ export function ChatPage() {
     if (state === 'final') {
       const msgObj = payload.message as ChatMessage | null
       const c = msgObj ? extractContent(msgObj) : null
-      const finalText = c?.text || currentAiTextRef.current || ''
+      // 优先用 final message 中的文本，fallback 到流式累积文本
+      const finalText = (c?.text || '') || currentAiTextRef.current || ''
       const finalImages = c?.images?.length ? c.images : currentAiImagesRef.current
 
       if (!streamingBubbleRef.current && !finalText && !finalImages.length) return
@@ -423,14 +465,21 @@ export function ChatPage() {
           }
         : undefined
 
+      // 先渲染 DOM，再更新 React 状态，避免 React 接管 DOM 时清空内容
+      if (streamingBubbleRef.current) {
+        streamingBubbleRef.current.innerHTML = safeRenderMarkdown(finalText)
+      }
+
       // 更新最后一条 assistant 消息为最终内容
       setMessages((prev) => {
         const last = [...prev]
         for (let i = last.length - 1; i >= 0; i--) {
           if (last[i].role === 'assistant') {
+            // 如果 finalText 为空，保留已有的 text（防止覆盖为空）
+            const resolvedText = finalText || last[i].text || ''
             last[i] = {
               ...last[i],
-              text: finalText,
+              text: resolvedText,
               images: finalImages.length ? finalImages : undefined,
               durationMs,
               tokenUsage,
@@ -442,10 +491,6 @@ export function ChatPage() {
         return last
       })
 
-      if (streamingBubbleRef.current) {
-        streamingBubbleRef.current.innerHTML = renderMarkdown(finalText)
-      }
-
       resetStreamState()
       setTimeout(scrollToBottom, 50)
       processMessageQueue()
@@ -454,7 +499,7 @@ export function ChatPage() {
 
     if (state === 'aborted') {
       if (streamingBubbleRef.current && currentAiTextRef.current) {
-        streamingBubbleRef.current.innerHTML = renderMarkdown(currentAiTextRef.current)
+        streamingBubbleRef.current.innerHTML = safeRenderMarkdown(currentAiTextRef.current)
       }
       appendSystemMsg('生成已停止')
       resetStreamState()
@@ -861,36 +906,41 @@ export function ChatPage() {
 
     // assistant
     return (
-      <div
-        key={msg.id}
-        className="chat-msg chat-msg-ai"
-        data-stream-id={msg._streaming ? msg._streamId : undefined}
-      >
+      <BubbleErrorBoundary key={msg.id}>
         <div
-          className="chat-bubble"
-          dangerouslySetInnerHTML={msg._streaming ? undefined : { __html: renderMarkdown(msg.text) }}
+          className="chat-msg chat-msg-ai"
+          data-stream-id={msg._streaming ? msg._streamId : undefined}
         >
-          {msg._streaming && <span className="chat-stream-cursor" />}
+          {msg._streaming ? (
+            <div className="chat-bubble">
+              <span className="chat-stream-cursor" />
+            </div>
+          ) : (
+            <div
+              className="chat-bubble"
+              dangerouslySetInnerHTML={{ __html: safeRenderMarkdown(msg.text) }}
+            />
+          )}
+          {/* 只在组最后一条显示 meta */}
+          {!msg._streaming && isLast && (
+            <div className="chat-msg-meta">
+              <span>{formatTime(msg.time)}</span>
+              {msg.durationMs && msg.durationMs > 0 && (
+                <>
+                  <span className="chat-meta-sep">·</span>
+                  <span>⏱ {(msg.durationMs / 1000).toFixed(1)}s</span>
+                </>
+              )}
+              {msg.tokenUsage && (msg.tokenUsage.input + msg.tokenUsage.output) > 0 && (
+                <>
+                  <span className="chat-meta-sep">·</span>
+                  <span>↑{msg.tokenUsage.input} ↓{msg.tokenUsage.output}</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
-        {/* 只在组最后一条显示 meta */}
-        {!msg._streaming && isLast && (
-          <div className="chat-msg-meta">
-            <span>{formatTime(msg.time)}</span>
-            {msg.durationMs && msg.durationMs > 0 && (
-              <>
-                <span className="chat-meta-sep">·</span>
-                <span>⏱ {(msg.durationMs / 1000).toFixed(1)}s</span>
-              </>
-            )}
-            {msg.tokenUsage && (msg.tokenUsage.input + msg.tokenUsage.output) > 0 && (
-              <>
-                <span className="chat-meta-sep">·</span>
-                <span>↑{msg.tokenUsage.input} ↓{msg.tokenUsage.output}</span>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+      </BubbleErrorBoundary>
     )
   }
 
