@@ -182,7 +182,9 @@
 						  Target="[System64Folder]msiexec.exe"
 						  Arguments="/x [ProductCode]" />
 
-                <!-- 只清理本应用的安装目录，避免误删 %LOCALAPPDATA%\Programs 下的其他程序 -->
+                <RemoveFile Id="RemoveUserProgramsFiles" Directory="TauriLocalAppDataPrograms" Name="*" On="uninstall" />
+                <RemoveFolder Id="RemoveUserProgramsFolder" Directory="TauriLocalAppDataPrograms" On="uninstall" />
+
 				<RemoveFolder Id="INSTALLDIR"
 							  On="uninstall" />
 
