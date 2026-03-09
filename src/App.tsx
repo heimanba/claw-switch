@@ -20,6 +20,7 @@ import {
 import type { Provider } from "@/types";
 import type { EnvConflict } from "@/types/env";
 import { useProvidersQuery, useSettingsQuery } from "@/lib/query";
+import { useToolVersionQuery } from "@/lib/query/queries";
 import {
   providersApi,
   settingsApi,
@@ -263,9 +264,12 @@ function App() {
   } = useProxyStatus();
   const isCurrentAppTakeoverActive = takeoverStatus?.[activeApp] || false;
 
-  // OpenClaw Gateway 状态检测（仅当活动 app 为 openclaw 时轮询）
+    // OpenClaw Gateway 状态检测（仅当活动 app 为 openclaw 时轮询）
   const isOpenclaw = activeApp === "openclaw";
   const { data: isGatewayRunning } = useOpenClawServiceStatus(isOpenclaw);
+  // 检测 openclaw CLI 是否已安装，未安装时不显示"服务未启动"横幅
+  const { data: openclawToolVersion, isLoading: isOpenclawVersionLoading } = useToolVersionQuery(isOpenclaw ? "openclaw" : "");
+  const isOpenclawCliInstalled = !isOpenclawVersionLoading && !!openclawToolVersion?.version;
   const startOpenClawService = useStartOpenClawService();
   const handleStartGateway = () => void startOpenClawService.mutateAsync();
   const activeProviderId = useMemo(() => {
@@ -1234,8 +1238,8 @@ function App() {
           {renderHeaderActions()}
         </Header>
 
-        {/* Gateway 未启动全局警告横幅 */}
-        {isOpenclaw && isGatewayRunning === false && (
+        {/* Gateway 未启动全局警告横幅（仅在 CLI 已安装时显示）*/}
+        {isOpenclaw && isOpenclawCliInstalled && isGatewayRunning === false && (
           <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 bg-amber-600 dark:bg-amber-700 text-white text-xs">
             <span className="font-medium">
               {t("openclaw.gateway.notRunningBanner", { defaultValue: "Gateway 未启动，部分功能不可用" })}

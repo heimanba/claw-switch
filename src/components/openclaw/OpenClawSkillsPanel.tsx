@@ -566,9 +566,9 @@ function InstalledSkillRow({ skill, status, onInfo, onInstallDep, installing }: 
     : skill.source || t("openclaw.skills.custom", { defaultValue: "自定义" });
 
   const openHomepage = async () => {
-    if (!skill.homepage) return;
+    const url = skill.homepage || `https://clawhub.ai/skills/${skill.name}`;
     try {
-      await settingsApi.openExternal(skill.homepage);
+      await settingsApi.openExternal(url);
     } catch {
       // ignore
     }
@@ -656,24 +656,13 @@ function InstalledSkillRow({ skill, status, onInfo, onInstallDep, installing }: 
 
       {/* Right actions */}
       <div className="flex items-center gap-1 flex-shrink-0">
-        {skill.homepage && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={openHomepage}
-            className="h-8 w-8 p-0 hover:bg-muted"
-            title={t("openclaw.skills.homepage", { defaultValue: "主页" })}
-          >
-            <ExternalLink size={14} />
-          </Button>
-        )}
         <Button
           size="sm"
           variant="ghost"
           className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => onInfo(skill.name)}
+          onClick={openHomepage}
         >
+          <ExternalLink size={12} className="mr-1" />
           {t("openclaw.skills.detail", { defaultValue: "详情" })}
         </Button>
       </div>

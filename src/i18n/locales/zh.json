@@ -106,6 +106,7 @@
     "checkingEnv": "正在检测环境...",
     "nodeMissing": "未检测到 Node.js，请先安装",
     "nodeInstallLink": "前往安装",
+    "gitInstallLink": "前往安装 Git",
     "saveFailedGeneric": "保存失败，请重试",
     "general": "通用",
     "stopped": "已停止",
@@ -352,6 +353,7 @@
         "checkingEnv": "正在检测环境...",
         "nodeMissing": "未检测到 Node.js，请先安装",
         "nodeInstallLink": "前往安装",
+        "gitInstallLink": "前往安装 Git",
         "nodeTooOld": "Node.js 版本过低 (当前：{{version}})，请升级到 v{{minVersion}}+",
         "qwenCliMissing": "未检测到 Qwen CLI，正在安装..."
       },
@@ -873,6 +875,7 @@
       "checkingEnv": "正在检测环境...",
       "nodeMissing": "未检测到 Node.js，请先安装",
       "nodeInstallLink": "前往安装",
+      "gitInstallLink": "前往安装 Git",
       "nodeTooOld": "Node.js 版本过低 (当前：{{version}})，请升级到 v{{minVersion}}+",
       "refreshButton": "刷新检测状态",
       "uninstallButton": "卸载 CLI",

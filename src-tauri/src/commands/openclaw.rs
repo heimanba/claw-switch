@@ -229,41 +229,116 @@ fn find_openclaw_bin() -> String {
 
     let mut candidates: Vec<String> = Vec::new();
 
-    // nvm default alias（优先级最高）
-    if !home_str.is_empty() {
-        let nvm_alias = format!("{home_str}/.nvm/alias/default");
-        if let Ok(ver) = std::fs::read_to_string(&nvm_alias) {
-            let ver = ver.trim().trim_start_matches('v');
-            if !ver.is_empty() {
-                candidates.push(format!("{home_str}/.nvm/versions/node/v{ver}/bin/openclaw"));
+    #[cfg(target_os = "windows")]
+    {
+        // Windows：npm 全局安装的包在 %APPDATA%\npm\openclaw.cmd
+        if let Some(appdata) = dirs::data_dir() {
+            candidates.push(appdata.join("npm").join("openclaw.cmd").display().to_string());
+            candidates.push(appdata.join("npm").join("openclaw").display().to_string());
+        }
+        // nvm-windows：%APPDATA%\nvm\vX.Y.Z\openclaw.cmd
+        if let Some(appdata) = dirs::data_dir() {
+            let nvm_root = appdata.join("nvm");
+            if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+                let mut nvm_vers: Vec<_> = entries.flatten().collect();
+                // 按目录名降序排列，优先最新版本
+                nvm_vers.sort_unstable_by(|a, b| b.file_name().cmp(&a.file_name()));
+                for entry in nvm_vers {
+                    if entry.path().is_dir() {
+                        candidates.push(entry.path().join("openclaw.cmd").display().to_string());
+                        candidates.push(entry.path().join("openclaw").display().to_string());
+                    }
+                }
             }
         }
-        // nvm 扫描所有已安装版本
-        let nvm_base = format!("{home_str}/.nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm_base) {
-            for entry in entries.flatten() {
-                candidates.push(entry.path().join("bin/openclaw").display().to_string());
-            }
+        // volta（%LOCALAPPDATA%\Programs\Volta\bin）
+        if let Some(local) = dirs::data_local_dir() {
+            candidates.push(local.join("Programs").join("Volta").join("bin").join("openclaw.cmd").display().to_string());
         }
+        if !home_str.is_empty() {
+            candidates.push(format!("{home_str}\\.volta\\bin\\openclaw.cmd"));
+        }
+        // pnpm 全局（%APPDATA%\npm 也包含 pnpm 安装的包；部分配置在 %LOCALAPPDATA%\pnpm）
+        if let Some(local) = dirs::data_local_dir() {
+            candidates.push(local.join("pnpm").join("openclaw.cmd").display().to_string());
+        }
+        // C:\Program Files\nodejs（官方安装包）
+        candidates.push("C:\\Program Files\\nodejs\\openclaw.cmd".to_string());
     }
 
-    // 固定路径
-    candidates.push("/opt/homebrew/bin/openclaw".to_string());
-    candidates.push("/usr/local/bin/openclaw".to_string());
-    candidates.push("/usr/bin/openclaw".to_string());
+    #[cfg(not(target_os = "windows"))]
+    {
+        // nvm default alias（优先级最高）
+        if !home_str.is_empty() {
+            let nvm_alias = format!("{home_str}/.nvm/alias/default");
+            if let Ok(ver) = std::fs::read_to_string(&nvm_alias) {
+                let ver = ver.trim().trim_start_matches('v');
+                if !ver.is_empty() {
+                    candidates.push(format!("{home_str}/.nvm/versions/node/v{ver}/bin/openclaw"));
+                }
+            }
+            // nvm 扫描所有已安装版本
+            let nvm_base = format!("{home_str}/.nvm/versions/node");
+            if let Ok(entries) = std::fs::read_dir(&nvm_base) {
+                for entry in entries.flatten() {
+                    candidates.push(entry.path().join("bin/openclaw").display().to_string());
+                }
+            }
+        }
 
-    if !home_str.is_empty() {
-        candidates.push(format!("{home_str}/.npm-global/bin/openclaw"));
-        candidates.push(format!("{home_str}/Library/pnpm/openclaw"));
-        candidates.push(format!("{home_str}/.volta/bin/openclaw"));
-        candidates.push(format!("{home_str}/.yarn/bin/openclaw"));
-        candidates.push(format!("{home_str}/.local/bin/openclaw"));
+        // 固定路径
+        candidates.push("/opt/homebrew/bin/openclaw".to_string());
+        candidates.push("/usr/local/bin/openclaw".to_string());
+        candidates.push("/usr/bin/openclaw".to_string());
+
+        if !home_str.is_empty() {
+            candidates.push(format!("{home_str}/.npm-global/bin/openclaw"));
+            candidates.push(format!("{home_str}/Library/pnpm/openclaw"));
+            candidates.push(format!("{home_str}/.volta/bin/openclaw"));
+            candidates.push(format!("{home_str}/.yarn/bin/openclaw"));
+            candidates.push(format!("{home_str}/.local/bin/openclaw"));
+        }
     }
 
     candidates
         .into_iter()
         .find(|p| std::path::Path::new(p).exists())
-        .unwrap_or_else(|| "openclaw".to_string())
+        .unwrap_or_else(|| {
+            // fallback：依赖 PATH 查找（Windows 上依赖 PATH 中有 openclaw.cmd 的目录）
+            #[cfg(target_os = "windows")]
+            { "openclaw.cmd".to_string() }
+            #[cfg(not(target_os = "windows"))]
+            { "openclaw".to_string() }
+        })
+}
+
+/// 构建执行 openclaw CLI 命令的 Command。
+///
+/// - **Windows**：通过 `cmd /C <bin> <args...>` 调用，以支持 `.cmd` 脚本，
+///   并设置 `CREATE_NO_WINDOW` 避免弹出黑色控制台窗口。
+/// - **非 Windows**：直接以可执行文件路径启动进程。
+fn make_openclaw_command(args: &[&str]) -> std::process::Command {
+    let bin = find_openclaw_bin();
+    let extended_path = get_extended_path();
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let mut cmd_args = vec!["/C".to_string(), bin];
+        cmd_args.extend(args.iter().map(|s| s.to_string()));
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(&cmd_args)
+            .env("PATH", extended_path)
+            .creation_flags(CREATE_NO_WINDOW);
+        cmd
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = std::process::Command::new(bin);
+        cmd.args(args).env("PATH", extended_path);
+        cmd
+    }
 }
 
 // ============================================================================
@@ -469,9 +544,7 @@ pub fn set_openclaw_gateway(
 pub async fn reload_openclaw_gateway() -> Result<String, String> {
     info!("[OpenClaw] 执行 openclaw gateway reload ...");
     tokio::task::spawn_blocking(|| {
-        let output = std::process::Command::new(find_openclaw_bin())
-            .args(["gateway", "reload"])
-            .env("PATH", get_extended_path())
+        let output = make_openclaw_command(&["gateway", "reload"])
             .output()
             .map_err(|e| format!("执行 openclaw gateway reload 失败: {}", e))?;
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -555,9 +628,7 @@ pub struct OpenClawServiceDetail {
 /// Check whether the openclaw gateway system service is installed.
 /// Parses `openclaw gateway status` output for "Service not installed" keyword.
 fn check_openclaw_gateway_installed() -> Option<bool> {
-    let output = std::process::Command::new(find_openclaw_bin())
-        .args(["gateway", "status"])
-        .env("PATH", get_extended_path())
+    let output = make_openclaw_command(&["gateway", "status"])
         .output()
         .ok()?;
     let combined = format!(
@@ -597,9 +668,7 @@ pub async fn get_openclaw_service_detail() -> Result<OpenClawServiceDetail, Stri
 pub async fn install_openclaw_gateway() -> Result<String, String> {
     info!("[OpenClaw] 执行 openclaw gateway install ...");
     tokio::task::spawn_blocking(|| {
-        let output = std::process::Command::new(find_openclaw_bin())
-            .args(["gateway", "install"])
-            .env("PATH", get_extended_path())
+        let output = make_openclaw_command(&["gateway", "install"])
             .output()
             .map_err(|e| format!("执行 openclaw gateway install 失败: {}", e))?;
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -709,9 +778,7 @@ pub async fn start_openclaw_service() -> Result<String, String> {
     let config_path = openclaw_config::get_openclaw_config_path();
     if !config_path.exists() {
         info!("[OpenClaw] 配置文件不存在，执行 openclaw onboard --non-interactive --accept-risk 进行初始化...");
-        let onboard_output = std::process::Command::new(find_openclaw_bin())
-            .args(["onboard", "--non-interactive", "--accept-risk"])
-            .env("PATH", get_extended_path())
+        let onboard_output = make_openclaw_command(&["onboard", "--non-interactive", "--accept-risk"])
             .output()
             .map_err(|e| {
                 let msg = format!("执行 openclaw onboard 失败：{}", e);
@@ -733,9 +800,7 @@ pub async fn start_openclaw_service() -> Result<String, String> {
     }
 
     // 确保 gateway.mode 已配置（避免 launchd 重启时被阻塞）
-    let config_set_output = std::process::Command::new(find_openclaw_bin())
-        .args(["config", "set", "gateway.mode", "local"])
-        .env("PATH", get_extended_path())
+    let config_set_output = make_openclaw_command(&["config", "set", "gateway.mode", "local"])
         .output();
     match config_set_output {
         Ok(o) => info!("[OpenClaw] config set gateway.mode local exit code: {:?}", o.status.code()),
@@ -743,9 +808,7 @@ pub async fn start_openclaw_service() -> Result<String, String> {
     }
 
     // Use official CLI command: openclaw gateway start
-    let output = std::process::Command::new(find_openclaw_bin())
-        .args(["gateway", "start", "--port", "18789", "--allow-unconfigured"])
-        .env("PATH", get_extended_path())
+    let output = make_openclaw_command(&["gateway", "start", "--port", "18789", "--allow-unconfigured"])
         .output()
         .map_err(|e| {
             let msg = format!("启动服务失败：{}", e);
@@ -800,9 +863,7 @@ pub async fn stop_openclaw_service() -> Result<String, String> {
     }
 
     // Use official CLI command: openclaw gateway stop
-    let output = std::process::Command::new(find_openclaw_bin())
-        .args(["gateway", "stop", "--port", "18789"])
-        .env("PATH", get_extended_path())
+    let output = make_openclaw_command(&["gateway", "stop", "--port", "18789"])
         .output()
         .map_err(|e| {
             let msg = format!("停止服务失败：{}", e);
@@ -856,18 +917,14 @@ pub async fn stop_openclaw_service() -> Result<String, String> {
 pub async fn restart_openclaw_service() -> Result<String, String> {
     info!("[OpenClaw] 执行 openclaw gateway restart --port 18789 ...");
     // 确保 gateway.mode 已配置（避免 launchd 重启时被阻塞）
-    let config_set_output = std::process::Command::new(find_openclaw_bin())
-        .args(["config", "set", "gateway.mode", "local"])
-        .env("PATH", get_extended_path())
+    let config_set_output = make_openclaw_command(&["config", "set", "gateway.mode", "local"])
         .output();
     match config_set_output {
         Ok(o) => info!("[OpenClaw] config set gateway.mode local exit code: {:?}", o.status.code()),
         Err(e) => warn!("[OpenClaw] config set gateway.mode local 失败（可忽略）: {}", e),
     }
     // Use official CLI command: openclaw gateway restart
-    let output = std::process::Command::new(find_openclaw_bin())
-        .args(["gateway", "restart", "--port", "18789", "--allow-unconfigured"])
-        .env("PATH", get_extended_path())
+    let output = make_openclaw_command(&["gateway", "restart", "--port", "18789", "--allow-unconfigured"])
         .output()
         .map_err(|e| {
             let msg = format!("重启服务失败：{}", e);
@@ -970,13 +1027,30 @@ pub async fn run_doctor() -> Result<Vec<DoctorItem>, String> {
     // 1. 检查 OpenClaw 是否安装
     // find_openclaw_bin() 返回 "openclaw" 表示未找到具体路径，需额外用 `which` 验证
     let openclaw_bin = find_openclaw_bin();
-    let openclaw_installed = openclaw_bin != "openclaw"
-        || std::process::Command::new("which")
-            .arg("openclaw")
-            .env("PATH", get_extended_path())
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+    // fallback 名称在 Windows 为 "openclaw.cmd"，非 Windows 为 "openclaw"
+    let fallback_name = if cfg!(target_os = "windows") { "openclaw.cmd" } else { "openclaw" };
+    let openclaw_installed = openclaw_bin != fallback_name
+        || {
+            // 用 PATH 查找 openclaw 是否可调用
+            #[cfg(target_os = "windows")]
+            {
+                std::process::Command::new("cmd")
+                    .args(["/C", "where openclaw"])
+                    .env("PATH", get_extended_path())
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                std::process::Command::new("which")
+                    .arg("openclaw")
+                    .env("PATH", get_extended_path())
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            }
+        };
     results.push(DoctorItem {
         name: "OpenClaw 安装".to_string(),
         passed: openclaw_installed,
@@ -1414,9 +1488,7 @@ pub struct DoctorFixResult {
 pub async fn run_doctor_fix() -> Result<DoctorFixResult, String> {
     info!("[OpenClaw] 执行 openclaw doctor --repair --yes ...");
     tokio::task::spawn_blocking(|| {
-        let result = std::process::Command::new(find_openclaw_bin())
-            .args(["doctor", "--repair", "--yes"])
-            .env("PATH", get_extended_path())
+        let result = make_openclaw_command(&["doctor", "--repair", "--yes"])
             .output();
         match result {
             Ok(output) => {
@@ -1566,9 +1638,7 @@ fn remove_env_value(env_file: &str, key: &str) -> std::io::Result<()> {
 fn run_openclaw_cmd(args: &[&str]) -> Result<String, String> {
     debug!("[渠道] 执行 openclaw 命令: {:?}", args);
 
-    let output = std::process::Command::new(find_openclaw_bin())
-        .args(args)
-        .env("PATH", get_extended_path())
+    let output = make_openclaw_command(args)
         .output()
         .map_err(|e| format!("执行 openclaw 失败: {}", e))?;
 
@@ -1918,9 +1988,7 @@ pub async fn install_openclaw_dingtalk_plugin() -> Result<String, String> {
     // 3. 执行 openclaw plugins install @soimy/dingtalk
     info!("[钉钉插件] 执行安装命令...");
     let output = tokio::task::spawn_blocking(move || {
-        std::process::Command::new(find_openclaw_bin())
-            .args(["plugins", "install", "@soimy/dingtalk"])
-            .env("PATH", get_extended_path())
+        make_openclaw_command(&["plugins", "install", "@soimy/dingtalk"])
             .env("NPM_CONFIG_REGISTRY", "https://registry.npmmirror.com")
             .output()
             .map_err(|e| format!("执行安装命令失败: {}", e))

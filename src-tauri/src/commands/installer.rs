@@ -263,6 +263,39 @@ pub async fn install_cli_tool(
                 global_bin_path: None,
             });
         }
+
+        // 检测 git 是否安装（npm 安装某些包时依赖 git，缺失会导致 ENOENT spawn git 错误）
+        let git_found = {
+            #[cfg(target_os = "windows")]
+            {
+                Command::new("cmd")
+                    .args(["/C", "git --version"])
+                    .env("PATH", &extended_path)
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                Command::new("sh")
+                    .args(["-c", "git --version"])
+                    .env("PATH", &extended_path)
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            }
+        };
+        if !git_found {
+            return Ok(CliInstallResult {
+                success: false,
+                message: "未检测到 Git，npm 安装依赖 Git。请先安装 Git（https://git-scm.com/downloads），安装后重试。".to_string(),
+                error_code: Some("GIT_NOT_FOUND".to_string()),
+                fallback_action: Some("manual".to_string()),
+                global_bin_path: None,
+            });
+        }
+
         // 注意：不再做 `npm root -g` 权限预检。该命令只读取全局路径，并不验证写权限，
         // 在 nvm/volta 环境下几乎总成功，误导用户。实际权限问题由安装过程中的
         // stderr（EACCES / EPERM / access is denied）统一检测并返回 PERMISSION_DENIED。
@@ -816,7 +849,10 @@ fn open_terminal_platform(_app_id: &str, command_str: &str, _action: &str) -> Re
         "Write-Host ''\nWrite-Host '== CC Switch: 正在执行安装命令 =='\nWrite-Host ''\n{command_str}\nWrite-Host ''\nWrite-Host '操作完成，按任意键关闭...' -NoNewline\n$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')\n"
     );
 
-    std::fs::write(&script_path, &script_content)
+    // 写入 UTF-8 BOM，确保 PowerShell 正确识别中文字符，避免乱码
+    let mut content_with_bom = vec![0xEF_u8, 0xBB, 0xBF];
+    content_with_bom.extend_from_slice(script_content.as_bytes());
+    std::fs::write(&script_path, &content_with_bom)
         .map_err(|e| format!("创建安装脚本失败: {e}"))?;
 
     let script_str = script_path.to_string_lossy().into_owned();

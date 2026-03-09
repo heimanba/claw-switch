@@ -543,6 +543,15 @@ export function AppDashboard({
                         {t("overview.cli.nodeInstallLink")}
                       </button>
                     )}
+                    {installState.error.code === "GIT_NOT_FOUND" && (
+                      <button
+                        type="button"
+                        onClick={() => settingsApi.openExternal("https://git-scm.com/downloads")}
+                        className="mt-1.5 text-xs font-medium text-yellow-700 underline hover:text-yellow-900"
+                      >
+                        {t("overview.cli.gitInstallLink", { defaultValue: "前往安装 Git" })}
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="mt-3 flex items-center gap-2">

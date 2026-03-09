@@ -181,11 +181,12 @@ export function TestConnectionButton({
             )}
             <Button
               type="button"
-              variant={canTest ? "secondary" : "outline"}
+              variant="outline"
               size="sm"
               onClick={handleTest}
-              disabled={!canTest || isTesting}
-              className="gap-1.5 shrink-0"
+              disabled={!canTest}
+              aria-busy={isTesting}
+              className={`gap-1.5 shrink-0 min-w-[88px] ${isTesting ? "pointer-events-none" : ""}`}
             >
               {isTesting ? (
                 <>
