@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::State;
 
@@ -2512,4 +2515,276 @@ pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
         "安装 skill 失败: {}",
         if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }
     ))
+}
+
+/// Install skills from ZIP file directly to ~/.openclaw/skills/ (without SSOT/database).
+/// This is specifically for OpenClaw which doesn't recognize symlinks.
+#[tauri::command]
+pub fn openclaw_install_skills_from_zip(file_path: String) -> Result<Vec<String>, String> {
+    use zip::ZipArchive;
+    use crate::error::format_skill_error;
+
+    let zip_path = Path::new(&file_path);
+    if !zip_path.exists() {
+        return Err(format_skill_error(
+            "FILE_NOT_FOUND",
+            &[("path", &file_path)],
+            Some("checkFilePath"),
+        ));
+    }
+
+    // Get ~/.openclaw/skills/ directory
+    let home = dirs::home_dir().ok_or_else(|| {
+        format_skill_error("GET_HOME_DIR_FAILED", &[], Some("checkPermission"))
+    })?;
+    let openclaw_skills_dir = home.join(".openclaw").join("skills");
+    fs::create_dir_all(&openclaw_skills_dir)
+        .map_err(|e| format!("创建 OpenClaw skills 目录失败: {}", e))?;
+
+    // Extract ZIP to temp directory
+    let file = fs::File::open(zip_path)
+        .map_err(|e| format!("无法打开 ZIP 文件: {}", e))?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|e| format!("无法读取 ZIP 文件: {}", e))?;
+
+    if archive.is_empty() {
+        return Err(format_skill_error(
+            "EMPTY_ARCHIVE",
+            &[],
+            Some("checkZipContent"),
+        ));
+    }
+
+    let temp_dir = tempfile::tempdir()
+        .map_err(|e| format!("创建临时目录失败: {}", e))?;
+    let temp_path = temp_dir.path().to_path_buf();
+    let _ = temp_dir.keep(); // Keep for cleanup later
+
+    // Extract files
+    let mut symlinks: Vec<(PathBuf, String)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)
+            .map_err(|e| format!("读取 ZIP 条目失败: {}", e))?;
+        let file_path = match file.enclosed_name() {
+            Some(path) => path.to_owned(),
+            None => continue,
+        };
+        let outpath = temp_path.join(&file_path);
+
+        if file.is_symlink() {
+            let mut target = String::new();
+            std::io::Read::read_to_string(&mut file, &mut target)
+                .map_err(|e| format!("读取 symlink 目标失败: {}", e))?;
+            symlinks.push((outpath, target.trim().to_string()));
+        } else if file.is_dir() {
+            fs::create_dir_all(&outpath)
+                .map_err(|e| format!("创建目录失败: {}", e))?;
+        } else {
+            if let Some(parent) = outpath.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("创建父目录失败: {}", e))?;
+            }
+            let mut outfile = fs::File::create(&outpath)
+                .map_err(|e| format!("创建文件失败: {}", e))?;
+            std::io::copy(&mut file, &mut outfile)
+                .map_err(|e| format!("写入文件失败: {}", e))?;
+        }
+    }
+
+    // Resolve symlinks by copying target content
+    resolve_symlinks_in_dir(&temp_path, &symlinks)
+        .map_err(|e| format!("解析 symlink 失败: {}", e))?;
+
+    // Scan for skill directories (containing SKILL.md)
+    let skill_dirs = scan_skills_in_dir(&temp_path)
+        .map_err(|e| format!("扫描 skill 目录失败: {}", e))?;
+
+    if skill_dirs.is_empty() {
+        let _ = fs::remove_dir_all(&temp_path);
+        return Err(format_skill_error(
+            "NO_SKILLS_IN_ZIP",
+            &[],
+            Some("checkZipContent"),
+        ));
+    }
+
+    // Install each skill to ~/.openclaw/skills/
+    let mut installed = Vec::new();
+    for skill_dir in skill_dirs {
+        let skill_md = skill_dir.join("SKILL.md");
+        let dir_name = skill_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unnamed");
+
+        // Get skill name from SKILL.md if possible
+        let skill_name = if skill_md.exists() {
+            parse_skill_name_from_md(&skill_md).unwrap_or_else(|| dir_name.to_string())
+        } else {
+            dir_name.to_string()
+        };
+
+        // Sanitize install name
+        let install_name = sanitize_install_name(&skill_name)
+            .or_else(|| sanitize_install_name(dir_name))
+            .unwrap_or_else(|| "skill".to_string());
+
+        // Copy to ~/.openclaw/skills/<name>/
+        let dest = openclaw_skills_dir.join(&install_name);
+        if dest.exists() {
+            fs::remove_dir_all(&dest)
+                .map_err(|e| format!("删除已存在的 skill 目录失败: {}", e))?;
+        }
+        copy_dir_recursive(&skill_dir, &dest)
+            .map_err(|e| format!("复制 skill 到目标目录失败: {}", e))?;
+
+        installed.push(install_name);
+        info!("[OpenClaw Skills] installed skill from ZIP: {}", skill_name);
+    }
+
+    // Cleanup temp directory
+    let _ = fs::remove_dir_all(&temp_path);
+
+    Ok(installed)
+}
+
+// Helper: Parse skill name from SKILL.md front matter
+fn parse_skill_name_from_md(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    let content = content.trim_start_matches('\u{feff}');
+
+    let parts: Vec<&str> = content.splitn(3, "---").collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    let front_matter = parts[1].trim();
+    let meta: serde_yaml::Value = serde_yaml::from_str(front_matter).ok()?;
+    meta.get("name")?.as_str().map(|s| s.to_string())
+}
+
+// Helper: Sanitize install name
+fn sanitize_install_name(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let path = Path::new(trimmed);
+    let mut components = path.components();
+    match (components.next(), components.next()) {
+        (Some(std::path::Component::Normal(name)), None) => {
+            let normalized = name.to_string_lossy().trim().to_string();
+            if normalized.is_empty()
+                || normalized == "."
+                || normalized == ".."
+                || normalized.starts_with('.')
+            {
+                None
+            } else {
+                Some(normalized)
+            }
+        }
+        _ => None,
+    }
+}
+
+// Helper: Copy directory recursively
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest)
+        .map_err(|e| format!("创建目录失败: {}", e))?;
+
+    for entry in fs::read_dir(src)
+        .map_err(|e| format!("读取目录失败: {}", e))? {
+        let entry = entry.map_err(|e| format!("读取目录条目失败: {}", e))?;
+        let path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+
+        if path.is_dir() {
+            copy_dir_recursive(&path, &dest_path)?;
+        } else {
+            fs::copy(&path, &dest_path)
+                .map_err(|e| format!("复制文件失败: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
+// Helper: Resolve symlinks by copying target content
+fn resolve_symlinks_in_dir(base_dir: &Path, symlinks: &[(PathBuf, String)]) -> Result<(), String> {
+    let canonical_base = base_dir
+        .canonicalize()
+        .unwrap_or_else(|_| base_dir.to_path_buf());
+
+    for (link_path, target) in symlinks {
+        let parent = link_path.parent().unwrap_or(base_dir);
+        let resolved = parent.join(target);
+
+        let resolved = match resolved.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                log::warn!(
+                    "Symlink target does not exist, skipping: {} -> {}",
+                    link_path.display(),
+                    target
+                );
+                continue;
+            }
+        };
+
+        // Security check: ensure target is within base_dir
+        if !resolved.starts_with(&canonical_base) {
+            log::warn!(
+                "Symlink target outside base directory, skipping: {} -> {}",
+                link_path.display(),
+                resolved.display()
+            );
+            continue;
+        }
+
+        // Copy target content to symlink location
+        if resolved.is_dir() {
+            copy_dir_recursive(&resolved, link_path)?;
+        } else if resolved.is_file() {
+            if let Some(parent) = link_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("创建父目录失败: {}", e))?;
+            }
+            fs::copy(&resolved, link_path)
+                .map_err(|e| format!("复制文件失败: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
+// Helper: Scan directory for skills (directories containing SKILL.md)
+fn scan_skills_in_dir(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut skill_dirs = Vec::new();
+    scan_skills_recursive(dir, &mut skill_dirs)?;
+    Ok(skill_dirs)
+}
+
+fn scan_skills_recursive(current: &Path, results: &mut Vec<PathBuf>) -> Result<(), String> {
+    let skill_md = current.join("SKILL.md");
+    if skill_md.exists() {
+        results.push(current.to_path_buf());
+        return Ok(());
+    }
+
+    if let Ok(entries) = fs::read_dir(current) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                if dir_name.starts_with('.') {
+                    continue;
+                }
+                scan_skills_recursive(&path, results)?;
+            }
+        }
+    }
+
+    Ok(())
 }

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   RefreshCw,
+  Loader2,
   Search,
   ChevronDown,
   ChevronRight,
@@ -396,7 +397,11 @@ function InstalledTab({
           disabled={isFetching}
           onClick={onRefetch}
         >
-          <RefreshCw className={cn("w-4 h-4 mr-1.5", isFetching && "animate-spin")} />
+          {isFetching ? (
+            <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4 mr-1.5" />
+          )}
           {t("common.refresh", { defaultValue: "刷新" })}
         </Button>
       </div>
@@ -943,7 +948,8 @@ const OpenClawSkillsPanel: React.FC = () => {
         return;
       }
 
-      const installed = await skillsApi.installFromZip(filePath, "openclaw");
+      // 使用 OpenClaw 专用的 ZIP 安装方法（直接安装到 ~/.openclaw/skills/，不走 SSOT）
+      const installed = await openclawApi.installSkillsFromZip(filePath);
 
       if (installed.length === 0) {
         toast.info(
@@ -954,15 +960,15 @@ const OpenClawSkillsPanel: React.FC = () => {
         );
       } else if (installed.length === 1) {
         toast.success(
-          t("skills.installFromZip.successSingle", {
-            name: installed[0].name,
-            defaultValue: `Skill "${installed[0].name}" 安装成功`,
+          t("openclaw.skills.installFromZip.successSingle", {
+            name: installed[0],
+            defaultValue: `Skill "${installed[0]}" 安装成功`,
           }),
           { closeButton: true }
         );
       } else {
         toast.success(
-          t("skills.installFromZip.successMultiple", {
+          t("openclaw.skills.installFromZip.successMultiple", {
             count: installed.length,
             defaultValue: `已成功安装 ${installed.length} 个 Skills`,
           }),

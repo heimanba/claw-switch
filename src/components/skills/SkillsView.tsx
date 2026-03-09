@@ -96,31 +96,42 @@ export const SkillsView = React.forwardRef<SkillsViewHandle, SkillsViewProps>(
               </>
             )}
             {activeTab === "installed" && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-                  >
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[160px]">
-                  <DropdownMenuItem
-                    onClick={() => panelRef.current?.openInstallFromZip()}
-                  >
-                    <FolderArchive className="h-4 w-4 mr-2" />
-                    {t("skills.installFromZip.button")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => panelRef.current?.openImport()}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    {t("skills.import")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => panelRef.current?.refresh()}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                  title={t("skills.refresh")}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[160px]">
+                    <DropdownMenuItem
+                      onClick={() => panelRef.current?.openInstallFromZip()}
+                    >
+                      <FolderArchive className="h-4 w-4 mr-2" />
+                      {t("skills.installFromZip.button")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => panelRef.current?.openImport()}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      {t("skills.import")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
             )}
           </div>
         </div>

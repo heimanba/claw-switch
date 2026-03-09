@@ -28,6 +28,7 @@ interface UnifiedSkillsPanelProps {
 export interface UnifiedSkillsPanelHandle {
   openImport: () => void;
   openInstallFromZip: () => void;
+  refresh: () => void;
 }
 
 const UnifiedSkillsPanel = React.forwardRef<
@@ -44,7 +45,7 @@ const UnifiedSkillsPanel = React.forwardRef<
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: skills, isLoading } = useInstalledSkills();
+  const { data: skills, isLoading, refetch: refetchSkills } = useInstalledSkills();
   const toggleAppMutation = useToggleSkillApp();
   const uninstallMutation = useUninstallSkill();
   const { data: unmanagedSkills, refetch: scanUnmanaged } =
@@ -163,6 +164,10 @@ const UnifiedSkillsPanel = React.forwardRef<
   React.useImperativeHandle(ref, () => ({
     openImport: handleOpenImport,
     openInstallFromZip: handleInstallFromZip,
+    refresh: () => {
+      refetchSkills();
+      scanUnmanaged();
+    },
   }));
 
   const unmanagedForCurrentApp = useMemo(() => {

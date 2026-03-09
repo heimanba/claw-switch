@@ -364,4 +364,13 @@ export const openclawApi = {
   async clawHubInstall(slug: string): Promise<void> {
     return await invoke("openclaw_clawhub_install", { slug });
   },
+
+  /**
+   * 从 ZIP 文件安装 Skills 到 ~/.openclaw/skills/（直接安装，不走 SSOT/数据库）。
+   * 这是专门为 OpenClaw 设计的，因为 OpenClaw 不识别 symlink。
+   * 返回安装的 skill 目录名列表。
+   */
+  async installSkillsFromZip(filePath: string): Promise<string[]> {
+    return await invoke("openclaw_install_skills_from_zip", { filePath });
+  },
 };

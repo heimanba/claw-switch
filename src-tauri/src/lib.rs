@@ -1152,6 +1152,7 @@ pub fn run() {
             commands::openclaw_skills_info,
             commands::openclaw_clawhub_search,
             commands::openclaw_clawhub_install,
+            commands::openclaw_install_skills_from_zip,
         ]);
 
     let app = builder
