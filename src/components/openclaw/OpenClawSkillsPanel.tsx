@@ -13,6 +13,7 @@ import {
   ShieldOff,
   Sparkles,
   Package,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { openclawApi } from "@/lib/api/openclaw";
-import { settingsApi } from "@/lib/api";
+import { settingsApi, skillsApi } from "@/lib/api";
 import type { OpenClawSkillItem, ClawHubSkillItem } from "@/types";
 import { ListItemRow } from "@/components/common/ListItemRow";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -266,9 +267,28 @@ function ClawHubSection({ onInstalled }: ClawHubSectionProps) {
         {searchError && (
           <div className="flex items-start gap-2 py-3 px-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50">
             <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-red-600 dark:text-red-400 leading-relaxed">
-              {searchError}
-            </p>
+            <div className="text-xs text-red-600 dark:text-red-400 leading-relaxed space-y-1">
+              <p>{searchError}</p>
+              <p>
+                {t("openclaw.skills.clawHub.searchErrorHint", { defaultValue: "您也可以" })}
+                {" "}
+                <button
+                  type="button"
+                  className="underline hover:no-underline font-medium"
+                  onClick={async () => {
+                    try {
+                      await settingsApi.openExternal("https://clawhub.ai/skills");
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                >
+                  {t("openclaw.skills.clawHub.visitClawHub", { defaultValue: "前往 ClawHub 网站" })}
+                </button>
+                {" "}
+                {t("openclaw.skills.clawHub.searchErrorHintSuffix", { defaultValue: "手动下载 Skill" })}
+              </p>
+            </div>
           </div>
         )}
         {results !== null && results.length === 0 && !searchError && (
@@ -879,6 +899,7 @@ const OpenClawSkillsPanel: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"installed" | "discover">("installed");
   const [installingDep, setInstallingDep] = useState<string | null>(null);
+  const [installingFromZip, setInstallingFromZip] = useState(false);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: openclawSkillsKeys.list,
@@ -913,6 +934,55 @@ const OpenClawSkillsPanel: React.FC = () => {
     }
   };
 
+  const handleInstallFromZip = async () => {
+    setInstallingFromZip(true);
+    try {
+      const filePath = await skillsApi.openZipFileDialog();
+      if (!filePath) {
+        setInstallingFromZip(false);
+        return;
+      }
+
+      const installed = await skillsApi.installFromZip(filePath, "openclaw");
+
+      if (installed.length === 0) {
+        toast.info(
+          t("skills.installFromZip.noSkillsFound", {
+            defaultValue: "ZIP 包中未找到有效的 Skill（需要包含 SKILL.md）",
+          }),
+          { closeButton: true }
+        );
+      } else if (installed.length === 1) {
+        toast.success(
+          t("skills.installFromZip.successSingle", {
+            name: installed[0].name,
+            defaultValue: `Skill "${installed[0].name}" 安装成功`,
+          }),
+          { closeButton: true }
+        );
+      } else {
+        toast.success(
+          t("skills.installFromZip.successMultiple", {
+            count: installed.length,
+            defaultValue: `已成功安装 ${installed.length} 个 Skills`,
+          }),
+          { closeButton: true }
+        );
+      }
+
+      // 刷新 openclaw skills 列表
+      queryClient.invalidateQueries({ queryKey: openclawSkillsKeys.list });
+      refetch();
+    } catch (e) {
+      toast.error(
+        t("skills.installFailed", { defaultValue: "安装失败" }),
+        { description: String(e) }
+      );
+    } finally {
+      setInstallingFromZip(false);
+    }
+  };
+
   return (
     <TooltipProvider>
       <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
@@ -933,8 +1003,23 @@ const OpenClawSkillsPanel: React.FC = () => {
               {t("skills.discover", { defaultValue: "发现" })}
             </OpenClawTabButton>
           </div>
-          {/* Right: ClawHub link */}
-          <div className="mb-1.5">
+          {/* Right: ZIP upload + ClawHub link */}
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 gap-1"
+              onClick={handleInstallFromZip}
+              disabled={installingFromZip}
+              title={t("skills.installFromZip.button", { defaultValue: "从 ZIP 安装 Skill" })}
+            >
+              {installingFromZip ? (
+                <RefreshCw className="w-3 h-3 animate-spin" />
+              ) : (
+                <Upload className="w-3 h-3" />
+              )}
+              {t("skills.installFromZip.button", { defaultValue: "上传 ZIP" })}
+            </Button>
             <a
               href="https://clawhub.ai/skills"
               target="_blank"
