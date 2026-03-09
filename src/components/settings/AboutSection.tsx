@@ -90,7 +90,7 @@ npm i -g @openai/codex@latest
 # Gemini CLI
 npm i -g @google/gemini-cli@latest
 # OpenCode
-curl -fsSL https://opencode.ai/install | bash`;
+npm i -g opencode-ai`;
 
 export function AboutSection({ isPortable }: AboutSectionProps) {
   // ... (use hooks as before) ...

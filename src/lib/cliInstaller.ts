@@ -40,17 +40,18 @@ const INSTALL_COMMANDS: Record<AppId, string> = {
   claude: `npm install -g @anthropic-ai/claude-code ${REGISTRY}`,
   codex: `npm install -g @openai/codex ${REGISTRY}`,
   gemini: `npm install -g @google/gemini-cli ${REGISTRY}`,
-  opencode: 'curl -fsSL https://opencode.ai/install | bash',
+  opencode: `npm install -g opencode-ai ${REGISTRY}`,
   qwen: `npm install -g @qwen-code/qwen-code ${REGISTRY}`,
   openclaw: `npm install -g openclaw ${REGISTRY}`,
   cline: `npm install -g @cline/cline-code ${REGISTRY}`,
 };
 
-/** 卸载命令（仅供 UI 展示；opencode 无 npm 包无卸载命令） */
+/** 卸载命令（仅供 UI 展示） */
 const UNINSTALL_COMMANDS: Partial<Record<AppId, string>> = {
   claude: `npm uninstall -g @anthropic-ai/claude-code ${REGISTRY}`,
   codex: `npm uninstall -g @openai/codex ${REGISTRY}`,
   gemini: `npm uninstall -g @google/gemini-cli ${REGISTRY}`,
+  opencode: `npm uninstall -g opencode-ai ${REGISTRY}`,
   qwen: `npm uninstall -g @qwen-code/qwen-code ${REGISTRY}`,
   openclaw: `npm uninstall -g openclaw ${REGISTRY}`,
   cline: `npm uninstall -g @cline/cline-code ${REGISTRY}`,

@@ -40,6 +40,10 @@ const REGISTRY: &str = "--registry=https://registry.npmmirror.com";
 /// 当前为 900 秒（15 分钟），网络较慢或包较大时可适当调大。
 const CLI_INSTALL_TIMEOUT_SECS: u64 = 900;
 
+/// CLI 卸载过程最大等待时间（秒），超时后终止进程。
+/// 卸载通常比安装快，300 秒（5 分钟）已足够。
+const CLI_UNINSTALL_TIMEOUT_SECS: u64 = 300;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // 数据结构
 // ──────────────────────────────────────────────────────────────────────────────
@@ -77,7 +81,7 @@ fn get_install_command(app_id: &str) -> Option<String> {
         )),
         "codex" => Some(format!("npm install -g @openai/codex {REGISTRY}")),
         "gemini" => Some(format!("npm install -g @google/gemini-cli {REGISTRY}")),
-        "opencode" => Some("curl -fsSL https://opencode.ai/install | bash".to_string()),
+        "opencode" => Some(format!("npm install -g opencode-ai {REGISTRY}")),
         "qwen" => Some(format!(
             "npm install -g @qwen-code/qwen-code {REGISTRY}"
         )),
@@ -93,7 +97,7 @@ fn get_uninstall_command(app_id: &str) -> Option<String> {
         "claude" => "@anthropic-ai/claude-code",
         "codex" => "@openai/codex",
         "gemini" => "@google/gemini-cli",
-        "opencode" => return None, // curl 安装，无统一 npm 卸载
+        "opencode" => "opencode-ai",
         "qwen" => "@qwen-code/qwen-code",
         "openclaw" => "openclaw",
         "cline" => "@cline/cline-code",
@@ -114,99 +118,40 @@ fn estimate_uninstall_progress(line: &str) -> u8 {
     50
 }
 
-/// 构建扩展的 PATH 环境变量
-///
-/// GUI 应用启动时不继承用户 shell 的 PATH，需手动注入 nvm/volta/fnm/Homebrew 等路径。
+/// 构建扩展的 PATH 环境变量（委托到 crate::path_utils，保留此包装供文件内调用）
 fn get_extended_path() -> String {
-    let mut parts: Vec<String> = Vec::new();
-    let home = dirs::home_dir().unwrap_or_default();
-    let home_str = home.display().to_string();
-
-    // ① 最高优先级：继承当前进程 PATH
-    //    用户 shell 里通过 nvm/fnm/volta/Homebrew 选定的 node/npm 版本就在这里，
-    //    必须放最前面，确保 npm install 使用用户实际期望的版本。
-    let current = std::env::var("PATH").unwrap_or_default();
-    if !current.is_empty() {
-        parts.push(current);
-    }
-
-    // ② 兜底：nvm default alias（GUI 应用启动时继承到的 PATH 可能不含 nvm）
-    if !home_str.is_empty() {
-        let nvm_alias = format!("{home_str}/.nvm/alias/default");
-        if let Ok(ver) = std::fs::read_to_string(&nvm_alias) {
-            let ver = ver.trim().trim_start_matches('v');
-            if !ver.is_empty() {
-                let p = format!("{home_str}/.nvm/versions/node/v{ver}/bin");
-                if std::path::Path::new(&p).exists() {
-                    // 插到最前，比当前 PATH 更优先（仅当 default alias 存在时）
-                    parts.insert(0, p);
-                }
-            }
-        }
-
-        // ③ 兜底：nvm 所有已安装版本
-        let nvm_base = format!("{home_str}/.nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm_base) {
-            for entry in entries.flatten() {
-                let bin = entry.path().join("bin");
-                if bin.exists() {
-                    parts.push(bin.display().to_string());
-                }
-            }
-        }
-
-        // ④ 兜底：其他版本管理器 / 全局 npm
-        parts.push(format!("{home_str}/.fnm/aliases/default/bin")); // fnm
-        parts.push(format!("{home_str}/.volta/bin"));               // volta
-        parts.push(format!("{home_str}/.asdf/shims"));              // asdf
-        parts.push(format!("{home_str}/.local/share/mise/shims"));  // mise
-        parts.push(format!("{home_str}/.npm-global/bin"));          // npm global
-        parts.push(format!("{home_str}/.local/bin"));               // ~/.local/bin
-
-        #[cfg(target_os = "windows")]
-        if let Some(appdata) = dirs::data_dir() {
-            parts.push(appdata.join("npm").display().to_string());
-        }
-    }
-
-    // ⑤ 最低优先级：Homebrew / 系统路径（作为最终兜底）
-    #[cfg(target_os = "macos")]
-    {
-        parts.push("/opt/homebrew/bin".to_string()); // Apple Silicon
-        parts.push("/usr/local/bin".to_string());    // Intel Mac
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        parts.push("/usr/bin".to_string());
-        parts.push("/bin".to_string());
-    }
-
-    parts.join(if cfg!(target_os = "windows") { ";" } else { ":" })
+    crate::path_utils::get_extended_path()
 }
 
 /// 获取 npm 全局 bin 目录（用于安装成功后的 PATH 提示）
+///
+/// `npm bin -g` 在 npm 9+ 已被移除，改用 `npm prefix -g` 然后拼接 `bin` 子目录。
 fn get_npm_global_bin(extended_path: &str) -> Option<String> {
     #[cfg(target_os = "windows")]
     let output = Command::new("cmd")
-        .args(["/C", "npm bin -g"])
+        .args(["/C", "npm prefix -g"])
         .env("PATH", extended_path)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
     #[cfg(not(target_os = "windows"))]
     let output = Command::new("sh")
-        .args(["-c", "npm bin -g"])
+        .args(["-c", "npm prefix -g"])
         .env("PATH", extended_path)
         .output()
         .ok()?;
     if !output.status.success() {
         return None;
     }
-    let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if out.is_empty() || out.contains('\n') {
+    let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if prefix.is_empty() || prefix.contains('\n') {
         return None;
     }
-    Some(out)
+    // Windows: <prefix>\bin 不存在，全局 bin 就是 prefix 本身（npm 安装脚本放在此处）
+    #[cfg(target_os = "windows")]
+    return Some(prefix);
+    #[cfg(not(target_os = "windows"))]
+    return Some(format!("{prefix}/bin"));
 }
 
 /// 根据 npm 输出关键词估算安装进度百分比
@@ -275,10 +220,7 @@ pub async fn install_cli_tool(
 
     let extended_path = get_extended_path();
 
-    // opencode 使用 curl 安装，不需要 Node/npm
-    let skip_npm_check = app_id == "opencode";
-
-    if !skip_npm_check {
+    {
         // 推送：正在检测环境
         let _ = app.emit(
             "cli-install-progress",
@@ -321,48 +263,9 @@ pub async fn install_cli_tool(
                 global_bin_path: None,
             });
         }
-
-        // 推送：正在检测权限
-        let _ = app.emit(
-            "cli-install-progress",
-            CliInstallProgress {
-                app_id: app_id.clone(),
-                progress: 5,
-                log: "检测安装权限...".to_string(),
-            },
-        );
-
-        let perm_ok = {
-            #[cfg(target_os = "windows")]
-            {
-                Command::new("cmd")
-                    .args(["/C", "npm root -g"])
-                    .env("PATH", &extended_path)
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false)
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                Command::new("sh")
-                    .args(["-c", "npm root -g"])
-                    .env("PATH", &extended_path)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false)
-            }
-        };
-
-        if !perm_ok {
-            return Ok(CliInstallResult {
-                success: false,
-                message: "需要管理员/写全局目录权限，请使用手动安装方式（终端中执行）".to_string(),
-                error_code: Some("PERMISSION_DENIED".to_string()),
-                fallback_action: Some("manual".to_string()),
-                global_bin_path: None,
-            });
-        }
+        // 注意：不再做 `npm root -g` 权限预检。该命令只读取全局路径，并不验证写权限，
+        // 在 nvm/volta 环境下几乎总成功，误导用户。实际权限问题由安装过程中的
+        // stderr（EACCES / EPERM / access is denied）统一检测并返回 PERMISSION_DENIED。
     }
 
     // 推送：开始安装
@@ -449,7 +352,13 @@ pub async fn install_cli_tool(
         let mut last_line: Option<String> = None;
         for line in BufReader::new(stderr).lines() {
             if let Ok(line) = line {
-                if line.contains("EACCES") || line.contains("permission denied") {
+                // EACCES/EPERM: Unix 权限错误；"access is denied": Windows 权限错误
+                let lower = line.to_lowercase();
+                if line.contains("EACCES")
+                    || line.contains("EPERM")
+                    || lower.contains("permission denied")
+                    || lower.contains("access is denied")
+                {
                     perm_err = true;
                 }
                 last_line = Some(line.clone());
@@ -624,40 +533,8 @@ pub async fn uninstall_cli_tool(
 
     let extended_path = get_extended_path();
 
-    let _ = app.emit(
-        "cli-uninstall-progress",
-        CliInstallProgress {
-            app_id: app_id.clone(),
-            progress: 5,
-            log: "检测卸载权限...".to_string(),
-        },
-    );
-
-    #[cfg(target_os = "windows")]
-    let perm_ok = Command::new("cmd")
-        .args(["/C", "npm root -g"])
-        .env("PATH", &extended_path)
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    #[cfg(not(target_os = "windows"))]
-    let perm_ok = Command::new("sh")
-        .args(["-c", "npm root -g"])
-        .env("PATH", &extended_path)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    if !perm_ok {
-        return Ok(CliInstallResult {
-            success: false,
-            message: "需要管理员权限，请使用手动卸载方式".to_string(),
-            error_code: Some("PERMISSION_DENIED".to_string()),
-            fallback_action: Some("manual".to_string()),
-            global_bin_path: None,
-        });
-    }
+    // 注意：不做 `npm root -g` 权限预检（该命令不能验证写权限，在 nvm/volta 环境几乎总成功）。
+    // 实际权限问题由卸载过程 stderr（EACCES / EPERM / access is denied）统一检测。
 
     let _ = app.emit(
         "cli-uninstall-progress",
@@ -737,7 +614,13 @@ pub async fn uninstall_cli_tool(
         let mut perm_err = false;
         for line in BufReader::new(stderr).lines() {
             if let Ok(line) = line {
-                if line.contains("EACCES") || line.contains("permission denied") {
+                // EACCES/EPERM: Unix 权限错误；"access is denied": Windows 权限错误
+                let lower = line.to_lowercase();
+                if line.contains("EACCES")
+                    || line.contains("EPERM")
+                    || lower.contains("permission denied")
+                    || lower.contains("access is denied")
+                {
                     perm_err = true;
                 }
                 let _ = app_stderr.emit(
@@ -754,18 +637,59 @@ pub async fn uninstall_cli_tool(
     });
 
     let uninstall_pid_ref = UNINSTALL_PID.clone();
-    let (exit_status, has_perm_error) = tokio::task::spawn_blocking(move || {
+    let (exit_status, has_perm_error, timed_out) = tokio::task::spawn_blocking(move || {
         let _ = stdout_handle.join();
         let perm_err = stderr_handle.join().unwrap_or(false);
-        let status = child.wait().ok();
+
+        // 带超时等待进程退出，防止 npm 卡死导致线程永久阻塞
+        let (tx, rx) = mpsc::channel();
+        let wait_handle = std::thread::spawn(move || {
+            let _ = tx.send(child.wait());
+        });
+
+        let status = match rx.recv_timeout(Duration::from_secs(CLI_UNINSTALL_TIMEOUT_SECS)) {
+            Ok(Ok(s)) => Some(s),
+            Ok(Err(_)) => None,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                warn!(
+                    "[CLI Uninstaller] 卸载超时（{} 秒），终止进程",
+                    CLI_UNINSTALL_TIMEOUT_SECS
+                );
+                if let Some(pid) = *uninstall_pid_ref.lock().unwrap() {
+                    kill_process(pid);
+                }
+                let _ = wait_handle.join();
+                let mut guard = uninstall_pid_ref.lock().unwrap();
+                *guard = None;
+                return (None, perm_err, true);
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = wait_handle.join();
+                None
+            }
+        };
+
         {
             let mut guard = uninstall_pid_ref.lock().unwrap();
             *guard = None;
         }
-        (status, perm_err)
+        (status, perm_err, false)
     })
     .await
     .map_err(|e| format!("卸载任务错误: {e}"))?;
+
+    if timed_out {
+        return Ok(CliInstallResult {
+            success: false,
+            message: format!(
+                "卸载超时（{} 分钟），请使用手动卸载方式",
+                CLI_UNINSTALL_TIMEOUT_SECS / 60
+            ),
+            error_code: Some("INSTALL_TIMEOUT".to_string()),
+            fallback_action: Some("manual".to_string()),
+            global_bin_path: None,
+        });
+    }
 
     match exit_status {
         None => Ok(CliInstallResult {
@@ -882,10 +806,46 @@ fn open_terminal_platform(app_id: &str, command_str: &str, action: &str) -> Resu
 
 #[cfg(target_os = "windows")]
 fn open_terminal_platform(_app_id: &str, command_str: &str, _action: &str) -> Result<(), String> {
-    Command::new("powershell")
-        .args(["-NoExit", "-Command", command_str])
+    // 写临时 .ps1 脚本文件，用 -File 参数传递给 PowerShell，规避空格/引号在命令行中的解析问题。
+    // 用 cmd /c start 打开新的独立 PowerShell 窗口，使其继承完整的用户环境变量（含 npm/node PATH）。
+    // 直接 Command::new("powershell") 不会加载用户 profile，导致 npm/node 找不到。
+    let temp_dir = std::env::temp_dir();
+    let script_path = temp_dir.join(format!("cc_install_{}.ps1", std::process::id()));
+
+    let script_content = format!(
+        "Write-Host ''\nWrite-Host '== CC Switch: 正在执行安装命令 =='\nWrite-Host ''\n{command_str}\nWrite-Host ''\nWrite-Host '操作完成，按任意键关闭...' -NoNewline\n$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')\n"
+    );
+
+    std::fs::write(&script_path, &script_content)
+        .map_err(|e| format!("创建安装脚本失败: {e}"))?;
+
+    let script_str = script_path.to_string_lossy().into_owned();
+    // -ExecutionPolicy Bypass 避免脚本执行策略限制
+    // "" 作为空窗口标题占位，防止含空格的路径被 cmd start 误解析为标题
+    // 移除 -NoExit：脚本末尾的 ReadKey 已提供"按键关闭"体验，
+    // 保留 -NoExit 会导致用户按键后窗口仍无法关闭。
+    Command::new("cmd")
+        .args([
+            "/c",
+            "start",
+            "",     // 空标题占位，防止首个带引号参数被当作窗口标题
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_str,
+        ])
         .spawn()
         .map_err(|e| format!("启动终端失败: {e}"))?;
+
+    // 异步清理临时脚本文件（给 PowerShell 足够时间加载后再删除，延迟 120 秒）
+    // 注意：PowerShell -File 加载期间文件必须存在，30 秒在高负载机器上可能不够。
+    let script_path_cleanup = script_path.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(120));
+        let _ = std::fs::remove_file(&script_path_cleanup);
+    });
+
     Ok(())
 }
 

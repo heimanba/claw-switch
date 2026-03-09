@@ -18,6 +18,7 @@ mod openclaw_config;
 mod opencode_config;
 mod qwen_config;
 mod panic_hook;
+mod path_utils;
 mod prompt;
 mod prompt_files;
 mod provider;

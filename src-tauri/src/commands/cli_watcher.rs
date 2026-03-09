@@ -44,6 +44,35 @@ pub struct CliStatusChangedEvent {
 
 // ── 内部辅助函数 ──────────────────────────────────────────────────────────────
 
+/// 通过 `npm prefix -g` 获取用户自定义的 npm 全局安装前缀。
+/// 若用户通过 `npm config set prefix <path>` 自定义了路径，此函数返回对应的 bin 目录；
+/// 若命令失败或路径与已知标准路径重复则返回 None。
+fn get_npm_custom_prefix_bin() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let output = std::process::Command::new("cmd")
+        .args(["/C", "npm prefix -g"])
+        .output()
+        .ok()?;
+    #[cfg(not(target_os = "windows"))]
+    let output = std::process::Command::new("sh")
+        .args(["-c", "npm prefix -g"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+    let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if prefix.is_empty() || prefix.contains('\n') {
+        return None;
+    }
+    // Windows：npm 全局 bin 即 prefix 本身；其他平台在 prefix/bin
+    #[cfg(target_os = "windows")]
+    return Some(PathBuf::from(prefix));
+    #[cfg(not(target_os = "windows"))]
+    return Some(PathBuf::from(prefix).join("bin"));
+}
+
 /// 收集所有需要监听的 bin 目录（只返回实际存在的目录）
 fn get_watch_dirs() -> Vec<PathBuf> {
     let mut watch_dirs: Vec<PathBuf> = Vec::new();
@@ -67,8 +96,34 @@ fn get_watch_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         if let Some(appdata) = dirs::data_dir() {
+            // npm 全局 bin
             watch_dirs.push(appdata.join("npm"));
+            // nvm-windows：优先读取 NVM_HOME 环境变量，其次使用默认路径 %APPDATA%\nvm
+            let nvm_root = std::env::var("NVM_HOME")
+                .ok()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| appdata.join("nvm"));
+            if nvm_root.exists() {
+                if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() {
+                            watch_dirs.push(p);
+                        }
+                    }
+                }
+            }
         }
+        // volta（%LOCALAPPDATA%\Programs\Volta\bin）
+        if let Some(local_appdata) = dirs::data_local_dir() {
+            watch_dirs.push(local_appdata.join("Programs").join("Volta").join("bin"));
+            // fnm（%LOCALAPPDATA%\fnm\aliases\default）
+            watch_dirs.push(local_appdata.join("fnm").join("aliases").join("default"));
+        }
+        // volta via HOME（~\.volta\bin）
+        watch_dirs.push(home.join(".volta").join("bin"));
+        // C:\Program Files\nodejs（官网安装包默认路径）
+        watch_dirs.push(PathBuf::from("C:\\Program Files\\nodejs"));
     }
 
     // 用户目录下常见路径
@@ -106,6 +161,11 @@ fn get_watch_dirs() -> Vec<PathBuf> {
     }
 
     // 只保留实际存在的目录，并去重
+    // 动态追加用户自定义 npm prefix（`npm config set prefix <path>` 的情况）
+    if let Some(custom_bin) = get_npm_custom_prefix_bin() {
+        watch_dirs.push(custom_bin);
+    }
+
     let mut seen = std::collections::HashSet::new();
     watch_dirs
         .into_iter()
@@ -147,8 +207,49 @@ fn is_tool_file_present(tool: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
         if let Some(appdata) = dirs::data_dir() {
+            // npm 全局 bin
             candidates.push(appdata.join("npm").join(format!("{tool}.cmd")));
             candidates.push(appdata.join("npm").join(format!("{tool}.exe")));
+            // nvm-windows：优先读取 NVM_HOME 环境变量，其次使用默认路径 %APPDATA%\nvm
+            let nvm_root = std::env::var("NVM_HOME")
+                .ok()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| appdata.join("nvm"));
+            if nvm_root.exists() {
+                if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() {
+                            candidates.push(p.join(format!("{tool}.cmd")));
+                            candidates.push(p.join(format!("{tool}.exe")));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(local_appdata) = dirs::data_local_dir() {
+            // volta（%LOCALAPPDATA%\Programs\Volta\bin）
+            let volta_bin = local_appdata.join("Programs").join("Volta").join("bin");
+            candidates.push(volta_bin.join(format!("{tool}.cmd")));
+            candidates.push(volta_bin.join(format!("{tool}.exe")));
+            // fnm（%LOCALAPPDATA%\fnm\aliases\default）
+            let fnm_bin = local_appdata.join("fnm").join("aliases").join("default");
+            candidates.push(fnm_bin.join(format!("{tool}.cmd")));
+            candidates.push(fnm_bin.join(format!("{tool}.exe")));
+        }
+        // volta via HOME（~\.volta\bin）
+        if !home.as_os_str().is_empty() {
+            let volta_home = home.join(".volta").join("bin");
+            candidates.push(volta_home.join(format!("{tool}.cmd")));
+            candidates.push(volta_home.join(format!("{tool}.exe")));
+        }
+        // C:\Program Files\nodejs（官网安装包默认路径）
+        candidates.push(PathBuf::from(format!("C:\\Program Files\\nodejs\\{tool}.cmd")));
+        candidates.push(PathBuf::from(format!("C:\\Program Files\\nodejs\\{tool}.exe")));
+        // 用户自定义 npm prefix（npm config set prefix <path>）
+        if let Some(custom_bin) = get_npm_custom_prefix_bin() {
+            candidates.push(custom_bin.join(format!("{tool}.cmd")));
+            candidates.push(custom_bin.join(format!("{tool}.exe")));
         }
     }
 

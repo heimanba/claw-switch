@@ -198,6 +198,10 @@ fn is_node_version_ok(version: &str, min_major: u32) -> bool {
 /// - node_version_ok: 是否满足最低版本要求
 /// - has_cli / cli_version: 是否安装指定 CLI 以及版本号
 /// - min_node_major: 可选，指定最低 Node.js 主版本号，默认为 18
+///
+/// 注意（Windows）：`get_tool_versions` 在 Windows 上刻意返回空列表，以防止通过
+/// protocol handler 意外启动 Claude Code 等应用；但 `check_cli_env` 仍正常执行，
+/// 因为它被安装引导流程调用，需要检测 Node.js / CLI 是否就绪。
 #[tauri::command]
 pub async fn check_cli_env(tool: String, min_node_major: Option<u32>) -> Result<CliEnvStatus, String> {
     if !VALID_TOOLS.contains(&tool.as_str()) {
@@ -354,172 +358,24 @@ pub fn is_cli_installed(app_type: &AppType) -> bool {
         return true;
     }
     let (version, _) = scan_cli_version(tool);
-    version.is_some()
+    if version.is_some() {
+        return true;
+    }
+    // Windows：若工具安装在 WSL 中（配置了 override_dir 指向 WSL 路径），
+    // 原生路径扫描不到，需额外通过 WSL 检测。
+    #[cfg(target_os = "windows")]
+    if let Some(distro) = wsl_distro_for_tool(tool) {
+        let (version, _) = try_get_version_wsl(tool, &distro, None, None);
+        if version.is_some() {
+            return true;
+        }
+    }
+    false
 }
 
-/// 构建扩展的 PATH 环境变量。
-///
-/// GUI 应用启动时不继承用户 shell 的 PATH，需手动注入
-/// Homebrew / nvm / volta / fnm / asdf / mise 等常见路径。
-///
-/// 优先级设计：
-///   1. nvm 中版本号 >= 22 的路径（按版本降序）
-///   2. Homebrew node@XX keg-only 公式（/opt/homebrew/opt/node@XX，按版本降序）
-///   3. /opt/homebrew/bin（Homebrew 默认 node，版本通常较新）
-///   4. fnm/volta/asdf/mise 等版本管理器的默认路径
-///   5. nvm 中版本号 < 22 的路径（兜底，避免挡住更新的 Homebrew node）
-///   6. 当前进程 PATH（系统路径，可能含旧版 node）
-///   7. /usr/bin:/bin 绝对兜底
+/// 构建扩展的 PATH 环境变量（委托到 crate::path_utils，保留此包装供文件内调用）
 fn get_extended_path() -> String {
-    let mut preferred: Vec<String> = Vec::new(); // nvm/Homebrew >= v22
-    let mut mid: Vec<String> = Vec::new();       // fnm/volta/asdf/mise/npm-global
-    let mut nvm_old: Vec<String> = Vec::new();   // nvm < v22，放在系统 PATH 之后
-
-    let home = dirs::home_dir().unwrap_or_default();
-    let home_str = home.display().to_string();
-    let current = std::env::var("PATH").unwrap_or_default();
-
-    if !home_str.is_empty() {
-        // ① nvm：扫描所有已安装版本，>= 22 放 preferred，其余放 nvm_old
-        #[cfg(not(target_os = "windows"))]
-        {
-            let nvm_base = format!("{home_str}/.nvm/versions/node");
-            if let Ok(entries) = std::fs::read_dir(&nvm_base) {
-                let mut nvm_bins: Vec<(u32, u32, u32, String)> = entries
-                    .flatten()
-                    .filter_map(|e| {
-                        let bin = e.path().join("bin");
-                        if !bin.exists() {
-                            return None;
-                        }
-                        let name = e.file_name().into_string().ok()?;
-                        let ver = name.trim_start_matches('v');
-                        let mut nums = ver.split('.').filter_map(|s| s.parse::<u32>().ok());
-                        let major = nums.next().unwrap_or(0);
-                        let minor = nums.next().unwrap_or(0);
-                        let patch = nums.next().unwrap_or(0);
-                        Some((major, minor, patch, bin.display().to_string()))
-                    })
-                    .collect();
-                nvm_bins.sort_unstable_by(|a, b| {
-                    b.0.cmp(&a.0)
-                        .then_with(|| b.1.cmp(&a.1))
-                        .then_with(|| b.2.cmp(&a.2))
-                });
-                for (major, _, _, path) in nvm_bins {
-                    if major >= 22 {
-                        preferred.push(path);
-                    } else {
-                        nvm_old.push(path);
-                    }
-                }
-            }
-
-            // 其他版本管理器
-            mid.push(format!("{home_str}/.fnm/aliases/default/bin"));
-            mid.push(format!("{home_str}/.volta/bin"));
-            mid.push(format!("{home_str}/.asdf/shims"));
-            mid.push(format!("{home_str}/.local/share/mise/shims"));
-            mid.push(format!("{home_str}/.npm-global/bin"));
-            mid.push(format!("{home_str}/.local/bin"));
-        }
-
-        // Windows：nvm-windows 安装目录（默认 %APPDATA%\nvm）
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(appdata) = dirs::data_dir() {
-                // npm 全局 bin
-                mid.push(appdata.join("npm").display().to_string());
-                // nvm-windows：当前激活版本在 %APPDATA%\nvm\vX.Y.Z 目录
-                let nvm_root = appdata.join("nvm");
-                if nvm_root.exists() {
-                    if let Ok(entries) = std::fs::read_dir(&nvm_root) {
-                        for entry in entries.flatten() {
-                            let p = entry.path();
-                            if p.is_dir() {
-                                mid.push(p.display().to_string());
-                            }
-                        }
-                    }
-                }
-            }
-            // volta（Windows 用 %LOCALAPPDATA%\Programs\Volta\bin 或 ~/.volta/bin）
-            if let Some(local_appdata) = dirs::data_local_dir() {
-                mid.push(
-                    local_appdata
-                        .join("Programs")
-                        .join("Volta")
-                        .join("bin")
-                        .display()
-                        .to_string(),
-                );
-            }
-            mid.push(format!("{home_str}\\.volta\\bin"));
-            // fnm（Windows 默认在 %LOCALAPPDATA%\fnm 或 ~/.fnm）
-            if let Some(local_appdata) = dirs::data_local_dir() {
-                let fnm_root = local_appdata.join("fnm");
-                if fnm_root.exists() {
-                    let alias_bin = fnm_root.join("aliases").join("default");
-                    if alias_bin.exists() {
-                        mid.push(alias_bin.display().to_string());
-                    }
-                }
-            }
-            // C:\Program Files\nodejs（官网安装包默认路径）
-            mid.push("C:\\Program Files\\nodejs".to_string());
-        }
-    }
-
-    // ② Homebrew node@XX keg-only 公式（如 /opt/homebrew/opt/node@22/bin）
-    #[cfg(target_os = "macos")]
-    {
-        let homebrew_opt = "/opt/homebrew/opt";
-        if let Ok(entries) = std::fs::read_dir(homebrew_opt) {
-            let mut hb_nodes: Vec<(u32, String)> = entries
-                .flatten()
-                .filter_map(|e| {
-                    let name = e.file_name().into_string().ok()?;
-                    let ver_str = name.strip_prefix("node@")?;
-                    let major: u32 = ver_str.parse().ok()?;
-                    let bin = e.path().join("bin");
-                    if bin.join("node").exists() {
-                        Some((major, bin.display().to_string()))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            hb_nodes.sort_unstable_by(|a, b| b.0.cmp(&a.0));
-            for (major, path) in hb_nodes {
-                if major >= 22 {
-                    preferred.push(path);
-                } else {
-                    mid.push(path);
-                }
-            }
-        }
-
-        // ③ Homebrew 默认 node
-        preferred.push("/opt/homebrew/bin".to_string()); // Apple Silicon
-        preferred.push("/usr/local/bin".to_string());    // Intel Mac
-    }
-
-    // 组合最终 PATH
-    let mut parts: Vec<String> = Vec::new();
-    parts.extend(preferred);
-    parts.extend(mid);
-    if !current.is_empty() {
-        parts.push(current);
-    }
-    parts.extend(nvm_old);
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        parts.push("/usr/bin".to_string());
-        parts.push("/bin".to_string());
-    }
-
-    parts.join(if cfg!(target_os = "windows") { ";" } else { ":" })
+    crate::path_utils::get_extended_path()
 }
 
 /// 尝试直接执行命令获取版本
@@ -835,11 +691,38 @@ fn scan_cli_version(tool: &str) -> (Option<String>, Option<String>) {
     {
         if let Some(appdata) = dirs::data_dir() {
             push_unique_path(&mut search_paths, appdata.join("npm"));
+            // nvm-windows：扫描所有已安装版本目录（%APPDATA%\nvm\vX.Y.Z）
+            let nvm_root = appdata.join("nvm");
+            if nvm_root.exists() {
+                if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() {
+                            push_unique_path(&mut search_paths, p);
+                        }
+                    }
+                }
+            }
         }
         push_unique_path(
             &mut search_paths,
             std::path::PathBuf::from("C:\\Program Files\\nodejs"),
         );
+        // volta（%LOCALAPPDATA%\Programs\Volta\bin 或 ~/.volta/bin）
+        if let Some(local_appdata) = dirs::data_local_dir() {
+            push_unique_path(
+                &mut search_paths,
+                local_appdata.join("Programs").join("Volta").join("bin"),
+            );
+            // fnm（%LOCALAPPDATA%\fnm\aliases\default）
+            let fnm_bin = local_appdata.join("fnm").join("aliases").join("default");
+            if fnm_bin.exists() {
+                push_unique_path(&mut search_paths, fnm_bin);
+            }
+        }
+        if !home.as_os_str().is_empty() {
+            push_unique_path(&mut search_paths, home.join(".volta").join("bin"));
+        }
     }
 
     let fnm_base = home.join(".local/state/fnm_multishells");

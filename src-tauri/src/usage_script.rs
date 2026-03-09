@@ -29,8 +29,10 @@ pub async fn execute_usage_script(
         validate_base_url(base_url)?;
     }
 
-    // 3. 在独立作用域中提取 request 配置（确保 Runtime/Context 在 await 前释放）
-    let request_config = {
+    // 3. 在独立作用域中一次性提取 request 配置和 extractor 函数字符串
+    //    （确保 Runtime/Context 在 await 前释放，同时避免脚本被执行两次——
+    //     若脚本含时间戳/随机数等副作用，两次执行会导致 request 与 extractor 状态不一致）
+    let (request_config, extractor_src) = {
         let runtime = Runtime::new().map_err(|e| {
             AppError::localized(
                 "usage_script.runtime_create_failed",
@@ -48,7 +50,7 @@ pub async fn execute_usage_script(
 
         context.with(|ctx| {
             // 执行用户代码，获取配置对象
-            let config: rquickjs::Object = ctx.eval(script_with_vars.clone()).map_err(|e| {
+            let config: rquickjs::Object = ctx.eval(script_with_vars).map_err(|e| {
                 AppError::localized(
                     "usage_script.config_parse_failed",
                     format!("解析配置失败: {e}"),
@@ -64,6 +66,27 @@ pub async fn execute_usage_script(
                     format!("Missing request config: {e}"),
                 )
             })?;
+
+            // 提取 extractor 函数，序列化为源码字符串保存（函数本身无法跨 Runtime 传递）
+            let extractor: Function = config.get("extractor").map_err(|e| {
+                AppError::localized(
+                    "usage_script.extractor_missing",
+                    format!("缺少 extractor 函数: {e}"),
+                    format!("Missing extractor function: {e}"),
+                )
+            })?;
+            // 通过临时全局变量 + toString() 提取函数源码，确保 this 绑定正确
+            // Context 本身在此闭包结束即被 drop，无需手动清理全局变量
+            ctx.globals().set("__tmpExtractor__", extractor).map_err(|e| {
+                AppError::localized(
+                    "usage_script.extractor_missing",
+                    format!("设置临时全局变量失败: {e}"),
+                    format!("Failed to set temp global: {e}"),
+                )
+            })?;
+            let extractor_src: String = ctx
+                .eval("__tmpExtractor__.toString()")
+                .unwrap_or_default();
 
             // 将 request 转换为 JSON 字符串
             let request_json: String = ctx
@@ -91,7 +114,7 @@ pub async fn execute_usage_script(
                     )
                 })?;
 
-            Ok::<_, AppError>(request_json)
+            Ok::<_, AppError>((request_json, extractor_src))
         })?
     }; // Runtime 和 Context 在这里被 drop
 
@@ -111,7 +134,7 @@ pub async fn execute_usage_script(
     // 6. 发送 HTTP 请求
     let response_data = send_http_request(&request, timeout_secs).await?;
 
-    // 7. 在独立作用域中执行 extractor（确保 Runtime/Context 在函数结束前释放）
+    // 7. 在独立作用域中执行 extractor（使用步骤 3 中已提取的函数源码，避免重复执行脚本）
     let result: Value = {
         let runtime = Runtime::new().map_err(|e| {
             AppError::localized(
@@ -129,17 +152,10 @@ pub async fn execute_usage_script(
         })?;
 
         context.with(|ctx| {
-            // 重新 eval 获取配置对象
-            let config: rquickjs::Object = ctx.eval(script_with_vars.clone()).map_err(|e| {
-                AppError::localized(
-                    "usage_script.config_reparse_failed",
-                    format!("重新解析配置失败: {e}"),
-                    format!("Failed to re-parse config: {e}"),
-                )
-            })?;
-
-            // 提取 extractor 函数
-            let extractor: Function = config.get("extractor").map_err(|e| {
+            // 直接对步骤 3 中序列化的 extractor 源码求值，得到函数对象
+            // 包裹在 "(" ... ")" 中以确保函数表达式/箭头函数被正确解析
+            let eval_src = format!("({extractor_src})");
+            let extractor: Function = ctx.eval(eval_src.as_str()).map_err(|e| {
                 AppError::localized(
                     "usage_script.extractor_missing",
                     format!("缺少 extractor 函数: {e}"),
