@@ -169,6 +169,7 @@ export function ProviderList({
   }, [appId]);
 
   // OpenClaw: 仅有一个供应商且未配置默认模型时，自动将该供应商设为默认
+  // 注意：只在 primary 为空时才自动设置，避免覆盖用户手动配置的主模型
   const openclawAutoSetDefaultAttemptedRef = useRef(false);
   useEffect(() => {
     if (appId !== "openclaw" || !onSetAsDefault) return;
@@ -178,12 +179,15 @@ export function ProviderList({
     const config = provider.settingsConfig as { models?: { id: string }[] } | undefined;
     if (!config?.models?.length) return;
     if (openclawAutoSetDefaultAttemptedRef.current) return;
+    // 已有 primary 模型时不自动覆盖
+    if (openclawDefaultModel?.primary) return;
     openclawAutoSetDefaultAttemptedRef.current = true;
     onSetAsDefault(provider);
   }, [
     appId,
     onSetAsDefault,
     providers,
+    openclawDefaultModel,
   ]);
 
 
