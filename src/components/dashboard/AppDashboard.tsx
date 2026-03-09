@@ -911,8 +911,8 @@ export function AppDashboard({
                         onClick={() => onOpenAction?.('openclawChannels')}
                         className="w-full flex items-center gap-3 p-3 rounded-lg border border-dashed border-border hover:border-border-hover hover:bg-bg-secondary/50 transition-colors text-left group"
                       >
-                        <div className="w-9 h-9 rounded-lg bg-bg-secondary group-hover:bg-bg-tertiary flex items-center justify-center flex-shrink-0 transition-colors">
-                          <Plus className="w-4 h-4 text-text-muted group-hover:text-text-secondary transition-colors" />
+                        <div className="w-9 h-9 rounded-lg bg-[#F0F0F2] group-hover:bg-[#E8E8EA] flex items-center justify-center flex-shrink-0 transition-colors">
+                          <Plus className="w-4 h-4 text-[#888888] group-hover:text-[#555555] transition-colors" />
                         </div>
                         <div className="flex-1">
                           <p className="text-sm text-text-secondary group-hover:text-text-primary transition-colors">{t("overview.openclaw.channelCard.configure")}</p>
