@@ -7,6 +7,9 @@ import type {
   OpenClawToolsConfig,
   OpenClawAgentInfo,
   OpenClawGatewayConfig,
+  OpenClawSkillItem,
+  OpenClawSkillsListResult,
+  ClawHubSkillItem,
 } from "@/types";
 
 /**
@@ -323,5 +326,42 @@ export const openclawApi = {
    */
   async reloadGateway(): Promise<string> {
     return await invoke("reload_openclaw_gateway");
+  },
+
+  // ============================================================
+  // OpenClaw Skills（CLI skills 管理）
+  // ============================================================
+
+  /**
+   * 列出所有 OpenClaw Skills 及其依赖/可用状态。
+   * 调用 `openclaw skills list --json`。
+   * CLI 不可用时返回 { skills: [], cliAvailable: false }。
+   */
+  async skillsList(): Promise<OpenClawSkillsListResult> {
+    return await invoke("openclaw_skills_list");
+  },
+
+  /**
+   * 获取单个 OpenClaw Skill 的详细信息。
+   * 调用 `openclaw skills info <name> --json`。
+   */
+  async skillsInfo(name: string): Promise<OpenClawSkillItem> {
+    return await invoke("openclaw_skills_info", { name });
+  },
+
+  /**
+   * 搜索 ClawHub 社区 Skills。
+   * 调用 `openclaw skills search <query> --json`。
+   */
+  async clawHubSearch(query: string): Promise<ClawHubSkillItem[]> {
+    return await invoke("openclaw_clawhub_search", { query });
+  },
+
+  /**
+   * 从 ClawHub 安装 Skill（通过 slug）。
+   * 调用 `openclaw skills install <slug>`。
+   */
+  async clawHubInstall(slug: string): Promise<void> {
+    return await invoke("openclaw_clawhub_install", { slug });
   },
 };

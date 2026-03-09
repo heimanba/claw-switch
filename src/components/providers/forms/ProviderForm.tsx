@@ -217,6 +217,10 @@ export function ProviderForm({
   const [isCodexEndpointModalOpen, setIsCodexEndpointModalOpen] =
     useState(false);
 
+  // 用于跟踪输入法（IME）组合输入状态，避免中文输入法产生多余连字符
+  const isOpencodeKeyComposing = useRef(false);
+  const isOpenclawKeyComposing = useRef(false);
+
   const [draftCustomEndpoints, setDraftCustomEndpoints] = useState<string[]>(
     () => {
       if (initialData) return [];
@@ -1714,14 +1718,22 @@ export function ProviderForm({
                 <Input
                   id="opencode-key"
                   value={opencodeForm.opencodeProviderKey}
-                  onChange={(e) =>
+                  onCompositionStart={() => { isOpencodeKeyComposing.current = true; }}
+                  onCompositionEnd={(e) => {
+                    isOpencodeKeyComposing.current = false;
+                    opencodeForm.setOpencodeProviderKey(
+                      (e.target as HTMLInputElement).value.toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9-]/g, ""),
+                    );
+                  }}
+                  onChange={(e) => {
+                    if (isOpencodeKeyComposing.current) return;
                     opencodeForm.setOpencodeProviderKey(
                       e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
-                    )
-                  }
+                    );
+                  }}
                   placeholder={t("opencode.providerKeyPlaceholder")}
                   disabled={isEditMode}
-                  inputMode="verbatim"
+                  inputMode="text"
                   lang="en"
                   autoComplete="off"
                   className={
@@ -1776,14 +1788,22 @@ export function ProviderForm({
                 <Input
                   id="openclaw-key"
                   value={openclawForm.openclawProviderKey}
-                  onChange={(e) =>
+                  onCompositionStart={() => { isOpenclawKeyComposing.current = true; }}
+                  onCompositionEnd={(e) => {
+                    isOpenclawKeyComposing.current = false;
+                    openclawForm.setOpenclawProviderKey(
+                      (e.target as HTMLInputElement).value.toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9-]/g, ""),
+                    );
+                  }}
+                  onChange={(e) => {
+                    if (isOpenclawKeyComposing.current) return;
                     openclawForm.setOpenclawProviderKey(
                       e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
-                    )
-                  }
+                    );
+                  }}
                   placeholder={t("openclaw.providerKeyPlaceholder")}
                   disabled={isEditMode}
-                  inputMode="verbatim"
+                  inputMode="text"
                   lang="en"
                   autoComplete="off"
                   className={

@@ -68,6 +68,7 @@ import GatewayPanel from "@/components/openclaw/GatewayPanel";
 import TestingPanel from "@/components/openclaw/TestingPanel";
 import ChannelsPanel from "@/components/openclaw/ChannelsPanel";
 import LogsPanel from "@/components/openclaw/LogsPanel";
+import OpenClawSkillsPanel from "@/components/openclaw/OpenClawSkillsPanel";
 import { ChatPage } from "@/components/chat/ChatPage";
 import { appLogger } from "@/lib/logger";
 
@@ -88,6 +89,7 @@ type View =
   | "openclawTesting"
   | "openclawChannels"
   | "openclawLogs"
+  | "openclawSkills"
   | "chat";
 
 interface WebDavSyncStatusUpdatedPayload {
@@ -134,6 +136,7 @@ const VALID_VIEWS: View[] = [
   "openclawGateway",
   "openclawTesting",
   "openclawChannels",
+  "openclawSkills",
   "chat",
 ];
 
@@ -145,6 +148,7 @@ const OPENCLAW_ONLY_VIEWS = new Set<View>([
   "agents",
   "openclawTesting",
   "openclawChannels",
+  "openclawSkills",
   "chat",
 ]);
 
@@ -779,6 +783,9 @@ function App() {
       case "openclawChannels":
         setCurrentView("openclawChannels");
         break;
+      case "openclawSkills":
+        setCurrentView("openclawSkills");
+        break;
       default:
         setCurrentView("providers");
         break;
@@ -921,6 +928,12 @@ function App() {
           return (
             <div className="flex-1 min-h-0 overflow-y-auto">
               <ChannelsPanel />
+            </div>
+          );
+        case "openclawSkills":
+          return (
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <OpenClawSkillsPanel />
             </div>
           );
         case "openclawLogs":

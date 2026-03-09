@@ -55,6 +55,7 @@ type View =
   | "openclawTesting"
   | "openclawChannels"
   | "openclawLogs"
+  | "openclawSkills"
   | "chat";
 
 interface SidebarProps {
@@ -134,6 +135,7 @@ export function Sidebar({
             { id: 'openclawChannels', label: t('openclaw.channels.title', { defaultValue: '消息渠道' }), icon: MessageCircle },
             { id: 'openclawTools', label: t('openclaw.tools.title', { defaultValue: '工具权限' }), icon: Shield },
             { id: 'openclawEnv', label: t('openclaw.env.title', { defaultValue: '环境变量' }), icon: KeyRound },
+            { id: 'openclawSkills', label: t('openclaw.skills.title', { defaultValue: 'Skills 管理' }), icon: Wrench },
           ],
         },
         {

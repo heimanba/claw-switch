@@ -86,6 +86,7 @@ export type DashboardQuickAction =
   | "agents"
   | "openclawTesting"
   | "openclawChannels"
+  | "openclawSkills"
   | "providers";
 
 export interface AppOverviewProps {

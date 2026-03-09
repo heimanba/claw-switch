@@ -567,3 +567,60 @@ export interface OpenClawGatewayConfig {
   tailscale?: OpenClawGatewayTailscale;
   [key: string]: unknown;
 }
+
+// ============================================================
+// OpenClaw Skills（CLI skills 管理，与 cc-switch Skills 系统不同）
+// ============================================================
+
+/** 单个 OpenClaw Skill 的依赖/可用状态（来自 `openclaw skills list --json`） */
+export interface OpenClawSkillItem {
+  name: string;
+  description?: string;
+  emoji?: string;
+  /** Skill 是否满足所有依赖条件、可正常使用 */
+  eligible: boolean;
+  /** Skill 是否被手动禁用 */
+  disabled: boolean;
+  /** 是否为随 OpenClaw 捆绑的内置 Skill */
+  bundled?: boolean;
+  /** 来源标签（捆绑/自定义/远程等） */
+  source?: string;
+  /** 主页 URL */
+  homepage?: string;
+  /** 是否被白名单阻止 */
+  blockedByAllowlist?: boolean;
+  /** 缺少的依赖信息 */
+  missing?: {
+    bins?: string[];
+    env?: string[];
+    config?: string[];
+  };
+  /** 可执行的自动安装选项 */
+  install?: Array<{
+    kind: string;
+    label: string;
+    [key: string]: unknown;
+  }>;
+  /** Skill 文件路径（SKILL.md） */
+  filePath?: string;
+  /** 完整依赖需求（来自 skills info） */
+  requirements?: {
+    bins?: string[];
+    env?: string[];
+  };
+}
+
+/** `openclaw skills list --json` 的返回结构 */
+export interface OpenClawSkillsListResult {
+  skills: OpenClawSkillItem[];
+  cliAvailable: boolean;
+  error?: string;
+}
+
+/** ClawHub 社区 Skill 搜索结果项 */
+export interface ClawHubSkillItem {
+  slug: string;
+  name?: string;
+  description?: string;
+  summary?: string;
+}

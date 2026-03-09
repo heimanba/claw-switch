@@ -16,6 +16,9 @@ pub struct TrayTexts {
     pub no_provider_hint: &'static str,
     pub quit: &'static str,
     pub _auto_label: &'static str,
+    pub gateway_start: &'static str,
+    pub gateway_stop: &'static str,
+    pub gateway_restart: &'static str,
 }
 
 impl TrayTexts {
@@ -26,6 +29,9 @@ impl TrayTexts {
                 no_provider_hint: "  (No providers yet, please add them from the main window)",
                 quit: "Quit",
                 _auto_label: "Auto (Failover)",
+                gateway_start: "Start Gateway",
+                gateway_stop: "Stop Gateway",
+                gateway_restart: "Restart Gateway",
             },
             "ja" => Self {
                 show_main: "メインウィンドウを開く",
@@ -33,12 +39,18 @@ impl TrayTexts {
                     "  (プロバイダーがまだありません。メイン画面から追加してください)",
                 quit: "終了",
                 _auto_label: "自動 (フェイルオーバー)",
+                gateway_start: "ゲートウェイ起動",
+                gateway_stop: "ゲートウェイ停止",
+                gateway_restart: "ゲートウェイ再起動",
             },
             _ => Self {
                 show_main: "打开主界面",
                 no_provider_hint: "  (无供应商，请在主界面添加)",
                 quit: "退出",
                 _auto_label: "自动 (故障转移)",
+                gateway_start: "启动 Gateway",
+                gateway_stop: "停止 Gateway",
+                gateway_restart: "重启 Gateway",
             },
         }
     }
@@ -356,6 +368,54 @@ pub fn create_tray_menu(
             continue;
         }
 
+        // OpenClaw：只显示 Gateway 控制项，不展示 provider 列表
+        if section.app_type == AppType::OpenClaw {
+            // 标题（不可点击）
+            let gw_header = MenuItem::with_id(
+                app,
+                "openclaw_header",
+                section.header_label,
+                false,
+                None::<&str>,
+            )
+            .map_err(|e| AppError::Message(format!("创建 OpenClaw 标题失败: {e}")))?;
+            // 启动
+            let gw_start = MenuItem::with_id(
+                app,
+                "gateway_start",
+                tray_texts.gateway_start,
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| AppError::Message(format!("创建启动 Gateway 菜单失败: {e}")))?;
+            // 停止
+            let gw_stop = MenuItem::with_id(
+                app,
+                "gateway_stop",
+                tray_texts.gateway_stop,
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| AppError::Message(format!("创建停止 Gateway 菜单失败: {e}")))?;
+            // 重启
+            let gw_restart = MenuItem::with_id(
+                app,
+                "gateway_restart",
+                tray_texts.gateway_restart,
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| AppError::Message(format!("创建重启 Gateway 菜单失败: {e}")))?;
+
+            menu_builder = menu_builder
+                .item(&gw_header)
+                .item(&gw_start)
+                .item(&gw_stop)
+                .item(&gw_restart)
+                .separator();
+            continue;
+        }
+
         let app_type_str = section.app_type.as_str();
         let providers = app_state.db.get_all_providers(app_type_str)?;
 
@@ -436,11 +496,45 @@ pub fn handle_tray_menu_event(app: &tauri::AppHandle, event_id: &str) {
             log::info!("退出应用");
             app.exit(0);
         }
+        "gateway_start" | "gateway_stop" | "gateway_restart" => {
+            let action = event_id.to_string();
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                handle_gateway_action(&app_handle, &action).await;
+            });
+        }
         _ => {
             if handle_provider_tray_event(app, event_id) {
                 return;
             }
             log::warn!("未处理的菜单事件: {event_id}");
+        }
+    }
+}
+
+/// 处理 Gateway 启动/停止/重启操作
+async fn handle_gateway_action(app: &tauri::AppHandle, action: &str) {
+    log::info!("[Tray] Gateway 操作: {action}");
+    let result = match action {
+        "gateway_start" => crate::commands::start_openclaw_service().await,
+        "gateway_stop" => crate::commands::stop_openclaw_service().await,
+        "gateway_restart" => crate::commands::restart_openclaw_service().await,
+        _ => return,
+    };
+    match result {
+        Ok(msg) => {
+            log::info!("[Tray] Gateway {action} 成功: {msg}");
+            let _ = app.emit(
+                "gateway-action-result",
+                serde_json::json!({ "action": action, "success": true, "message": msg }),
+            );
+        }
+        Err(err) => {
+            log::error!("[Tray] Gateway {action} 失败: {err}");
+            let _ = app.emit(
+                "gateway-action-result",
+                serde_json::json!({ "action": action, "success": false, "message": err }),
+            );
         }
     }
 }

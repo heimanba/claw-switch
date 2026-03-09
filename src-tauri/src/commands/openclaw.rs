@@ -72,6 +72,28 @@ fn get_shell_node_bin_dir() -> Option<String> {
 ///   5. nvm 中版本号 < 22 的路径（兜底，避免挡住更新的 Homebrew node）
 ///   6. 当前进程 PATH（系统路径，可能含旧版 node）
 ///   7. /usr/bin:/bin 绝对兜底
+/// Strip ANSI escape codes from a string (e.g. \x1b[31m✖\x1b[39m → ✖)
+fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip the escape sequence: ESC [ ... final_byte (A-Za-z)
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                for nc in chars.by_ref() {
+                    if nc.is_ascii_alphabetic() {
+                        break; // end of escape sequence
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 fn get_extended_path() -> String {
     let mut preferred: Vec<String> = Vec::new(); // nvm/Homebrew >= v22
     let mut mid: Vec<String> = Vec::new();       // fnm/volta/asdf/mise/npm-global
@@ -2274,4 +2296,152 @@ pub async fn clear_openclaw_log(path: String) -> Result<(), String> {
         .map_err(|e| format!("清空日志文件失败: {}", e))?;
 
     Ok(())
+}
+
+// ============================================================================
+// OpenClaw Skills Commands (aligned with openclaw-manager skills.js)
+// ============================================================================
+
+/// List all OpenClaw skills with their dependency/eligibility status.
+/// Calls `openclaw skills list --json`.
+/// On CLI failure, returns `{ skills: [], cliAvailable: false }`.
+#[tauri::command]
+pub async fn openclaw_skills_list() -> Result<Value, String> {
+    let bin = find_openclaw_bin();
+    let output = std::process::Command::new(&bin)
+        .args(["skills", "list", "--json"])
+        .env("PATH", get_extended_path())
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // Try to parse JSON output from CLI
+            if let Ok(parsed) = serde_json::from_str::<Value>(stdout.trim()) {
+                return Ok(parsed);
+            }
+            // CLI succeeded but output is not valid JSON — wrap it
+            Ok(json!({ "skills": [], "cliAvailable": true, "rawOutput": stdout.trim() }))
+        }
+        Ok(out) => {
+            // CLI returned non-zero exit code
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            info!("[OpenClaw Skills] skills list failed: {}", stderr);
+            Ok(json!({ "skills": [], "cliAvailable": false, "error": stderr.trim() }))
+        }
+        Err(e) => {
+            // CLI not found or cannot be executed
+            info!("[OpenClaw Skills] skills list exec error: {}", e);
+            Ok(json!({ "skills": [], "cliAvailable": false, "error": e.to_string() }))
+        }
+    }
+}
+
+/// Get detailed info for a single OpenClaw skill.
+/// Calls `openclaw skills info <name> --json`.
+#[tauri::command]
+pub async fn openclaw_skills_info(name: String) -> Result<Value, String> {
+    let bin = find_openclaw_bin();
+    let output = std::process::Command::new(&bin)
+        .args(["skills", "info", &name, "--json"])
+        .env("PATH", get_extended_path())
+        .output()
+        .map_err(|e| format!("执行 openclaw skills info 失败: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if output.status.success() {
+        if let Ok(parsed) = serde_json::from_str::<Value>(stdout.trim()) {
+            return Ok(parsed);
+        }
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(format!(
+        "获取 skill 详情失败: {}",
+        if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }
+    ))
+}
+
+/// Search ClawHub for community skills.
+/// Calls `npx -y clawhub search <query>` and parses plain-text output.
+#[tauri::command]
+pub async fn openclaw_clawhub_search(query: String) -> Result<Value, String> {
+    let q = query.trim().to_string();
+    if q.is_empty() {
+        return Ok(json!([]));
+    }
+
+    let output = tokio::process::Command::new("npx")
+        .args(["-y", "--registry=https://registry.npmmirror.com", "clawhub", "search", &q])
+        .env("PATH", get_extended_path())
+        .output()
+        .await
+        .map_err(|e| format!("执行 clawhub 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let raw = if stderr.trim().is_empty() { stdout.trim().to_string() } else { stderr.trim().to_string() };
+        // Strip ANSI escape codes (e.g. \x1b[31m✖\x1b[39m)
+        let clean = strip_ansi_codes(&raw);
+        // Map known error patterns to friendly messages
+        let friendly = if clean.contains("Rate limit exceeded") || clean.to_lowercase().contains("rate limit") {
+            "搜索频率超限，请稍后再试".to_string()
+        } else if clean.contains("ENOTFOUND") || clean.contains("network") || clean.contains("fetch failed") {
+            "网络连接失败，请检查网络后重试".to_string()
+        } else if clean.contains("ENOENT") || clean.contains("not found") {
+            "clawhub 命令未找到，请确认已安装 OpenClaw".to_string()
+        } else {
+            clean
+        };
+        return Err(format!("ClawHub 搜索失败: {}", friendly));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Try JSON first
+    if let Ok(parsed) = serde_json::from_str::<Value>(stdout.trim()) {
+        return Ok(parsed);
+    }
+
+    // Plain-text: each non-empty line is a skill entry
+    let items: Vec<Value> = stdout
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('-') && !l.starts_with("Search"))
+        .map(|l| {
+            let parts: Vec<&str> = l.splitn(2, char::is_whitespace).collect();
+            let slug = parts.first().unwrap_or(&"").trim();
+            let desc = parts.get(1).unwrap_or(&"").trim();
+            json!({ "slug": slug, "description": desc, "source": "clawhub" })
+        })
+        .filter(|v| !v["slug"].as_str().unwrap_or("").is_empty())
+        .collect();
+
+    Ok(json!(items))
+}
+
+/// Install a skill from ClawHub by slug.
+/// Calls `npx -y clawhub install <slug>`.
+#[tauri::command]
+pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
+    let home = dirs::home_dir().unwrap_or_default();
+
+    let output = tokio::process::Command::new("npx")
+        .args(["-y", "--registry=https://registry.npmmirror.com", "clawhub", "install", &slug])
+        .env("PATH", get_extended_path())
+        .current_dir(&home)
+        .output()
+        .await
+        .map_err(|e| format!("执行 clawhub 失败: {}", e))?;
+
+    if output.status.success() {
+        info!("[OpenClaw Skills] installed skill via clawhub: {}", slug);
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Err(format!(
+        "安装 skill 失败: {}",
+        if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }
+    ))
 }
