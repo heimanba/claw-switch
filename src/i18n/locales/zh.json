@@ -1845,7 +1845,19 @@
       "maxConcurrent": "最大并发数",
       "saveSuccess": "Agents 配置已保存",
       "saveFailed": "保存 Agents 配置失败",
-      "loadFailed": "读取 Agents 配置失败"
+      "loadFailed": "读取 Agents 配置失败",
+      "primaryModelChanged": "主模型已切换",
+      "primaryModelChangedHint": "建议在 OpenClaw 中输入 /reset 后再进行校验，以确保校验效果准确。",
+      "invalidModelWarning": {
+        "title": "以下模型不在当前供应商列表中",
+        "desc": "请重新选择有效模型，或先添加对应供应商：",
+        "clearBtn": "清除无效模型"
+      },
+      "fallbackSelected": "已选 {{count}} 个模型",
+      "fallbackPlaceholder": "选择回退模型...",
+      "fallbackSearch": "搜索模型...",
+      "noModels": "无可用模型",
+      "noModelsHint": "暂无可用模型，可快速添加百炼 Coding Plan 套餐中的全部模型："
     },
     "chat": {
       "gatewayEmptyHint": "连接 OpenClaw Gateway 后即可开始对话"

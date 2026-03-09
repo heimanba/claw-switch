@@ -1109,7 +1109,23 @@ export function ChatPage() {
 
         {/* 消息区域 */}
         <div className="chat-messages" onClick={() => setShowCmdPanel(false)}>
-          {!wsClient.gatewayReady ? (
+          {wsStatus === 'ready' ? (
+            <>
+              {renderMessageGroups()}
+              {isSending && !isStreaming && (
+                <div className="chat-typing">
+                  <span /><span /><span />
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </>
+          ) : (wsStatus === 'connecting' || wsStatus === 'reconnecting') ? (
+            <div className="chat-gateway-empty">
+              <div className="chat-gateway-empty-title" style={{ fontSize: '1rem', fontWeight: 400, opacity: 0.6 }}>
+                {_t('openclaw.chat.connecting', { defaultValue: '正在连接 Gateway…' })}
+              </div>
+            </div>
+          ) : (
             <div className="chat-gateway-empty">
               <div className="chat-gateway-empty-illus">
                 <svg viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -1140,16 +1156,6 @@ export function ChatPage() {
                   : _t('openclaw.gateway.startButton', { defaultValue: '启动 Gateway' })}
               </button>
             </div>
-          ) : (
-            <>
-              {renderMessageGroups()}
-              {isSending && !isStreaming && (
-                <div className="chat-typing">
-                  <span /><span /><span />
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </>
           )}
         </div>
 

@@ -118,10 +118,22 @@ const ModelConfigCard: React.FC<ModelConfigCardProps> = ({ className, isCodingPl
   };
 
   const handleSave = async () => {
+    // 记录保存前的主模型，用于判断是否发生切换
+    const prevPrimaryModel = defaults?.model?.primary ?? "";
     try {
       const updated = buildUpdatedDefaults(defaults, primaryModel, fallbackModels);
       await saveAgentsMutation.mutateAsync(updated);
-      toast.success(t("openclaw.agents.saveSuccess"));
+      // 若主模型发生了切换，提示用户先 /reset 再校验
+      if (primaryModel && primaryModel !== prevPrimaryModel) {
+        toast.info(t("openclaw.agents.primaryModelChanged", { defaultValue: "主模型已切换" }), {
+          description: t("openclaw.agents.primaryModelChangedHint", {
+            defaultValue: "建议在 OpenClaw 中输入 /reset 后再进行校验，以确保校验效果准确。",
+          }),
+          duration: 8000,
+        });
+      } else {
+        toast.success(t("openclaw.agents.saveSuccess"));
+      }
     } catch (error) {
       const detail = extractErrorMessage(error);
       toast.error(t("openclaw.agents.saveFailed"), {
