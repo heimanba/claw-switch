@@ -312,7 +312,7 @@ jobs:
 
             ### 下载
 
-            - **macOS**: `Claw-Switch-${{ github.ref_name }}-macOS.zip`（解压即用）或 `Claw-Switch-${{ github.ref_name }}-macOS.tar.gz`（Homebrew）
+            - **macOS**: `Claw-Switch-${{ github.ref_name }}-macOS.zip`（解压即用）或 `Claw-Switch-${{ github.ref_name }}-macOS.tar.gz`
             - **Windows**: `Claw-Switch-${{ github.ref_name }}-Windows.msi`（安装版）或 `Claw-Switch-${{ github.ref_name }}-Windows-Portable.zip`（绿色版）
             - **Linux (x86_64)**: `Claw-Switch-${{ github.ref_name }}-Linux-x86_64.AppImage` / `.deb` / `.rpm`
             - **Linux (ARM64)**: `Claw-Switch-${{ github.ref_name }}-Linux-arm64.AppImage` / `.deb` / `.rpm`
