@@ -216,24 +216,26 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result<(), AppError> {
         }
     }
 
-    #[cfg(windows)]
-    {
-        // Windows 上 rename 目标存在会失败，先移除再重命名（尽量接近原子性）
-        if path.exists() {
-            let _ = fs::remove_file(path);
+    // Windows 上 rename 目标文件存在时会返回 EPERM，使用 copy + remove 模拟原子替换。
+    // 先 copy 到目标，再删除临时文件；即使删除临时文件失败，数据也已完整写入。
+    let rename_result = fs::rename(&tmp, path);
+    if let Err(ref e) = rename_result {
+        let is_windows_eperm = cfg!(windows)
+            && matches!(e.raw_os_error(), Some(code) if code == 5 /* ERROR_ACCESS_DENIED */ || code == 32 /* ERROR_SHARING_VIOLATION */);
+        let is_eperm = e.kind() == std::io::ErrorKind::PermissionDenied;
+        if is_windows_eperm || is_eperm {
+            // fallback: copy tmp -> dest, then remove tmp
+            fs::copy(&tmp, path).map_err(|e| AppError::IoContext {
+                context: format!("原子替换失败(copy): {} -> {}", tmp.display(), path.display()),
+                source: e,
+            })?;
+            let _ = fs::remove_file(&tmp);
+        } else {
+            rename_result.map_err(|e| AppError::IoContext {
+                context: format!("原子替换失败: {} -> {}", tmp.display(), path.display()),
+                source: e,
+            })?;
         }
-        fs::rename(&tmp, path).map_err(|e| AppError::IoContext {
-            context: format!("原子替换失败: {} -> {}", tmp.display(), path.display()),
-            source: e,
-        })?;
-    }
-
-    #[cfg(not(windows))]
-    {
-        fs::rename(&tmp, path).map_err(|e| AppError::IoContext {
-            context: format!("原子替换失败: {} -> {}", tmp.display(), path.display()),
-            source: e,
-        })?;
     }
     Ok(())
 }
