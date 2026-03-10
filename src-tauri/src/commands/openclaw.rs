@@ -613,7 +613,9 @@ fn check_openclaw_port_listening(port: u16) -> Option<u32> {
 /// Check whether the OpenClaw gateway service is running (port 18789).
 #[tauri::command]
 pub async fn get_openclaw_service_status() -> Result<bool, String> {
-    let running = check_openclaw_port_listening(18789).is_some();
+    let (running, _) = tokio::task::spawn_blocking(check_gateway_running_from_json)
+        .await
+        .unwrap_or((false, None));
     Ok(running)
 }
 
@@ -628,41 +630,131 @@ pub struct OpenClawServiceDetail {
     pub gateway_installed: Option<bool>,
 }
 
-/// Check whether the openclaw gateway system service is installed.
-/// Parses `openclaw gateway status` output for "Service not installed" keyword.
-fn check_openclaw_gateway_installed() -> Option<bool> {
-    let output = make_openclaw_command(&["gateway", "status"])
+/// Parse `openclaw gateway status --json` output into a serde_json::Value.
+fn parse_gateway_status_json(json_str: &str) -> Option<serde_json::Value> {
+    serde_json::from_str(json_str).ok()
+}
+
+/// Execute `openclaw gateway status --json` and return parsed JSON.
+/// Returns None if the command fails or output is not valid JSON.
+fn query_gateway_status_json() -> Option<serde_json::Value> {
+    let output = make_openclaw_command(&["gateway", "status", "--json"])
         .output()
         .ok()?;
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let lower = combined.to_lowercase();
-    // "service not installed" appears when gateway install has not been run
-    if lower.contains("service not installed") || lower.contains("service unit not found") {
-        Some(false)
-    } else {
-        // Any other output (including errors) means it IS installed or we can't tell;
-        // treat as installed unless we see an explicit "not installed" signal.
-        Some(true)
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_gateway_status_json(stdout.trim())
+}
+
+/// Check running state and PID via `openclaw gateway status --json`.
+/// Returns (running, pid). Falls back to lsof/netstat if JSON unavailable.
+fn check_gateway_running_from_json() -> (bool, Option<u32>) {
+    if let Some(v) = query_gateway_status_json() {
+        let port_busy = v.get("port")
+            .and_then(|p| p.get("status"))
+            .and_then(|s| s.as_str())
+            .map(|s| s == "busy")
+            .unwrap_or(false);
+        let rpc_ok = v.get("rpc")
+            .and_then(|r| r.get("ok"))
+            .and_then(|o| o.as_bool())
+            .unwrap_or(false);
+        let running = port_busy || rpc_ok;
+        let pid = v.get("port")
+            .and_then(|p| p.get("listeners"))
+            .and_then(|l| l.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|item| item.get("pid"))
+            .and_then(|p| p.as_u64())
+            .map(|p| p as u32);
+        return (running, pid);
     }
+    // Fallback to lsof/netstat if JSON parsing fails (old CLI version)
+    let pid = check_openclaw_port_listening(18789);
+    (pid.is_some(), pid)
+}
+
+/// Get all running gateway PIDs from JSON listeners, fallback to lsof/netstat.
+fn get_gateway_pids_from_json() -> Vec<u32> {
+    if let Some(v) = query_gateway_status_json() {
+        if let Some(arr) = v.get("port")
+            .and_then(|p| p.get("listeners"))
+            .and_then(|l| l.as_array())
+        {
+            let pids: Vec<u32> = arr.iter()
+                .filter_map(|item| item.get("pid")?.as_u64())
+                .map(|p| p as u32)
+                .collect();
+            if !pids.is_empty() {
+                return pids;
+            }
+        }
+    }
+    // Fallback
+    get_openclaw_pids_on_port(18789)
 }
 
 /// Get detailed OpenClaw gateway service status.
+/// Uses `openclaw gateway status --json` for precise status in a single call.
+/// Falls back to lsof/netstat port check if JSON parsing fails.
 #[tauri::command]
 pub async fn get_openclaw_service_detail() -> Result<OpenClawServiceDetail, String> {
-    let pid = check_openclaw_port_listening(18789);
-    let gateway_installed = tokio::task::spawn_blocking(check_openclaw_gateway_installed)
-        .await
-        .unwrap_or(None);
-    Ok(OpenClawServiceDetail {
-        running: pid.is_some(),
-        pid,
-        port: 18789,
-        gateway_installed,
+    tokio::task::spawn_blocking(|| {
+        let output = make_openclaw_command(&["gateway", "status", "--json"])
+            .output()
+            .map_err(|e| format!("执行 openclaw gateway status --json 失败: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Try structured JSON parsing first
+        if let Some(v) = parse_gateway_status_json(stdout.trim()) {
+            let gateway_installed = v.get("service")
+                .and_then(|s| s.get("loaded"))
+                .and_then(|l| l.as_bool());
+
+            let port_busy = v.get("port")
+                .and_then(|p| p.get("status"))
+                .and_then(|s| s.as_str())
+                .map(|s| s == "busy")
+                .unwrap_or(false);
+
+            let rpc_ok = v.get("rpc")
+                .and_then(|r| r.get("ok"))
+                .and_then(|o| o.as_bool())
+                .unwrap_or(false);
+
+            let running = port_busy || rpc_ok;
+
+            let pid = v.get("port")
+                .and_then(|p| p.get("listeners"))
+                .and_then(|l| l.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|item| item.get("pid"))
+                .and_then(|p| p.as_u64())
+                .map(|p| p as u32);
+
+            info!(
+                "[OpenClaw] service detail via JSON: running={}, pid={:?}, gateway_installed={:?}",
+                running, pid, gateway_installed
+            );
+            return Ok(OpenClawServiceDetail {
+                running,
+                pid,
+                port: 18789,
+                gateway_installed,
+            });
+        }
+
+        // Fallback: JSON parsing failed (old CLI version), use lsof/netstat
+        warn!("[OpenClaw] gateway status --json 解析失败，退回 lsof/netstat 检测");
+        let pid = check_openclaw_port_listening(18789);
+        Ok(OpenClawServiceDetail {
+            running: pid.is_some(),
+            pid,
+            port: 18789,
+            gateway_installed: None,
+        })
     })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 /// Install the openclaw gateway system service (launchd/systemd).
@@ -767,14 +859,17 @@ fn read_gateway_err_log_tail(n: usize) -> String {
 
 /// Start the OpenClaw gateway service in the background.
 /// If ~/.openclaw/openclaw.json does not exist, runs `openclaw onboard --non-interactive --accept-risk` first.
-/// Polls port 18789 for up to 15 seconds waiting for the service to start.
+/// Polls `openclaw gateway status --json` for up to 15 seconds waiting for the service to start.
 #[tauri::command]
 pub async fn start_openclaw_service() -> Result<String, String> {
     info!("[OpenClaw] 执行 openclaw gateway start --port 18789 ...");
-    // Already running?
-    if check_openclaw_port_listening(18789).is_some() {
+    // Already running? Check via JSON first.
+    let (already_running, _) = tokio::task::spawn_blocking(check_gateway_running_from_json)
+        .await
+        .unwrap_or((false, None));
+    if already_running {
         info!("[OpenClaw] 服务已在运行中，跳过启动");
-        return Err("服务已在运行中".to_string());
+        return Ok("服务已在运行中".to_string());
     }
 
     // 检查配置文件是否存在，不存在则先执行 onboard 初始化
@@ -833,11 +928,12 @@ pub async fn start_openclaw_service() -> Result<String, String> {
         return Err(msg);
     }
 
-    // Poll until port is listening (up to 15 seconds)
+    // Poll until gateway reports running (up to 15 seconds)
     for i in 1..=15u32 {
         std::thread::sleep(std::time::Duration::from_secs(1));
-        if let Some(pid) = check_openclaw_port_listening(18789) {
-            let msg = format!("服务已启动 ({}秒), PID: {}", i, pid);
+        let (running, pid) = check_gateway_running_from_json();
+        if running {
+            let msg = format!("服务已启动 ({}秒), PID: {:?}", i, pid);
             info!("[OpenClaw] ✅ {}", msg);
             return Ok(msg);
         }
@@ -859,8 +955,11 @@ pub async fn start_openclaw_service() -> Result<String, String> {
 #[tauri::command]
 pub async fn stop_openclaw_service() -> Result<String, String> {
     info!("[OpenClaw] 执行 openclaw gateway stop --port 18789 ...");
-    // Check if service is running
-    if check_openclaw_port_listening(18789).is_none() {
+    // Check if service is running via JSON
+    let (running, _) = tokio::task::spawn_blocking(check_gateway_running_from_json)
+        .await
+        .unwrap_or((false, None));
+    if !running {
         info!("[OpenClaw] 服务未在运行，无需停止");
         return Ok("服务未在运行".to_string());
     }
@@ -888,17 +987,18 @@ pub async fn stop_openclaw_service() -> Result<String, String> {
         return Err(msg);
     }
 
-    // Wait for port to be released (up to 5 seconds)
+    // Wait for gateway to stop (up to 5 seconds), check via JSON
     for _ in 1..=5u32 {
         std::thread::sleep(std::time::Duration::from_secs(1));
-        if check_openclaw_port_listening(18789).is_none() {
+        let (still_running, _) = check_gateway_running_from_json();
+        if !still_running {
             return Ok("服务已停止".to_string());
         }
     }
 
     // If still running after timeout, force kill as fallback
     warn!("[OpenClaw] gateway stop 超时，尝试强制 kill 进程...");
-    let pids = get_openclaw_pids_on_port(18789);
+    let pids = get_gateway_pids_from_json();
     info!("[OpenClaw] 需要强制 kill 的 PID 列表: {:?}", pids);
     for &pid in &pids {
         let killed = kill_openclaw_process(pid, true);
@@ -906,7 +1006,8 @@ pub async fn stop_openclaw_service() -> Result<String, String> {
     }
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    if check_openclaw_port_listening(18789).is_none() {
+    let (still_running, _) = check_gateway_running_from_json();
+    if !still_running {
         info!("[OpenClaw] ✅ 服务已停止（强制 kill）");
         Ok("服务已停止".to_string())
     } else {
@@ -949,11 +1050,12 @@ pub async fn restart_openclaw_service() -> Result<String, String> {
         return Err(msg);
     }
 
-    // Poll until port is listening (up to 15 seconds)
+    // Poll until gateway reports running (up to 15 seconds)
     for i in 1..=15u32 {
         std::thread::sleep(std::time::Duration::from_secs(1));
-        if let Some(pid) = check_openclaw_port_listening(18789) {
-            let msg = format!("服务已重启 ({}秒), PID: {}", i, pid);
+        let (running, pid) = check_gateway_running_from_json();
+        if running {
+            let msg = format!("服务已重启 ({}秒), PID: {:?}", i, pid);
             info!("[OpenClaw] ✅ {}", msg);
             return Ok(msg);
         }
@@ -984,7 +1086,9 @@ pub async fn run_openclaw_diagnostic() -> Result<OpenClawDiagnosticResult, Strin
     let config_path = openclaw_config::get_openclaw_config_path();
     let config_exists = config_path.exists();
     let config_path_str = config_path.to_string_lossy().to_string();
-    let service_running = check_openclaw_port_listening(18789).is_some();
+    let (service_running, _) = tokio::task::spawn_blocking(check_gateway_running_from_json)
+        .await
+        .unwrap_or((false, None));
     Ok(OpenClawDiagnosticResult {
         config_exists,
         config_path: config_path_str,
