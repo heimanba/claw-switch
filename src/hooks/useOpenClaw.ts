@@ -152,6 +152,17 @@ export function useStartOpenClawService() {
   return useMutation({
     mutationFn: async () => {
       serviceLogger.action("启动服务");
+
+      // 启动前先执行 doctor --repair，修复常见环境问题
+      serviceLogger.info("正在执行 openclaw doctor --repair ...");
+      toast.info(t("overview.openclaw.doctorRepairing", { defaultValue: "正在检测并修复环境问题..." }));
+      try {
+        await openclawApi.runDoctorFix();
+        serviceLogger.info("✅ doctor --repair 完成");
+      } catch (e) {
+        serviceLogger.warn("doctor --repair 执行失败（可忽略，继续启动）", e);
+      }
+
       const detail = await openclawApi.getServiceDetail();
       if (detail.gateway_installed === false) {
         serviceLogger.info("系统服务未安装，正在执行 gateway install...");
