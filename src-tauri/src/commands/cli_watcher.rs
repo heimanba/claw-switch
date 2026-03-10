@@ -44,13 +44,36 @@ pub struct CliStatusChangedEvent {
 
 // ── 内部辅助函数 ──────────────────────────────────────────────────────────────
 
+#[cfg(target_os = "windows")]
+/// 构建扩展 PATH，确保 GUI 进程也能发现用户实际安装的 node/npm 目录。
+fn get_extended_path() -> String {
+    crate::path_utils::get_extended_path()
+}
+
+#[cfg(target_os = "windows")]
+fn make_hidden_windows_cmd_call(program: &str, args: &[&str]) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.arg("/D")
+        .arg("/C")
+        .arg("call")
+        .arg(program)
+        .args(args)
+        .env("PATH", get_extended_path())
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
+        .creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
 /// 通过 `npm prefix -g` 获取用户自定义的 npm 全局安装前缀。
 /// 若用户通过 `npm config set prefix <path>` 自定义了路径，此函数返回对应的 bin 目录；
 /// 若命令失败或路径与已知标准路径重复则返回 None。
 fn get_npm_custom_prefix_bin() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
-    let output = std::process::Command::new("cmd")
-        .args(["/C", "npm prefix -g"])
+    let output = make_hidden_windows_cmd_call("npm", &["prefix", "-g"])
         .output()
         .ok()?;
     #[cfg(not(target_os = "windows"))]
@@ -119,11 +142,18 @@ fn get_watch_dirs() -> Vec<PathBuf> {
             watch_dirs.push(local_appdata.join("Programs").join("Volta").join("bin"));
             // fnm（%LOCALAPPDATA%\fnm\aliases\default）
             watch_dirs.push(local_appdata.join("fnm").join("aliases").join("default"));
+            // pnpm 全局 bin
+            watch_dirs.push(local_appdata.join("pnpm"));
         }
         // volta via HOME（~\.volta\bin）
         watch_dirs.push(home.join(".volta").join("bin"));
+        // Scoop
+        watch_dirs.push(home.join("scoop").join("shims"));
+        watch_dirs.push(home.join("scoop").join("apps").join("nodejs").join("current"));
+        watch_dirs.push(home.join("scoop").join("apps").join("nodejs-lts").join("current"));
         // C:\Program Files\nodejs（官网安装包默认路径）
         watch_dirs.push(PathBuf::from("C:\\Program Files\\nodejs"));
+        watch_dirs.push(PathBuf::from("C:\\Program Files (x86)\\nodejs"));
     }
 
     // 用户目录下常见路径
@@ -236,16 +266,36 @@ fn is_tool_file_present(tool: &str) -> bool {
             let fnm_bin = local_appdata.join("fnm").join("aliases").join("default");
             candidates.push(fnm_bin.join(format!("{tool}.cmd")));
             candidates.push(fnm_bin.join(format!("{tool}.exe")));
+            // pnpm 全局 bin
+            let pnpm_bin = local_appdata.join("pnpm");
+            candidates.push(pnpm_bin.join(format!("{tool}.cmd")));
+            candidates.push(pnpm_bin.join(format!("{tool}.exe")));
         }
         // volta via HOME（~\.volta\bin）
         if !home.as_os_str().is_empty() {
             let volta_home = home.join(".volta").join("bin");
             candidates.push(volta_home.join(format!("{tool}.cmd")));
             candidates.push(volta_home.join(format!("{tool}.exe")));
+            // Scoop
+            let scoop_shims = home.join("scoop").join("shims");
+            candidates.push(scoop_shims.join(format!("{tool}.cmd")));
+            candidates.push(scoop_shims.join(format!("{tool}.exe")));
+            let scoop_nodejs = home.join("scoop").join("apps").join("nodejs").join("current");
+            candidates.push(scoop_nodejs.join(format!("{tool}.cmd")));
+            candidates.push(scoop_nodejs.join(format!("{tool}.exe")));
+            let scoop_nodejs_lts = home.join("scoop").join("apps").join("nodejs-lts").join("current");
+            candidates.push(scoop_nodejs_lts.join(format!("{tool}.cmd")));
+            candidates.push(scoop_nodejs_lts.join(format!("{tool}.exe")));
         }
         // C:\Program Files\nodejs（官网安装包默认路径）
         candidates.push(PathBuf::from(format!("C:\\Program Files\\nodejs\\{tool}.cmd")));
         candidates.push(PathBuf::from(format!("C:\\Program Files\\nodejs\\{tool}.exe")));
+        candidates.push(PathBuf::from(format!(
+            "C:\\Program Files (x86)\\nodejs\\{tool}.cmd"
+        )));
+        candidates.push(PathBuf::from(format!(
+            "C:\\Program Files (x86)\\nodejs\\{tool}.exe"
+        )));
         // 用户自定义 npm prefix（npm config set prefix <path>）
         if let Some(custom_bin) = get_npm_custom_prefix_bin() {
             candidates.push(custom_bin.join(format!("{tool}.cmd")));

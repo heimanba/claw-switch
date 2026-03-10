@@ -155,7 +155,7 @@ export function useStartOpenClawService() {
 
       // 启动前先执行 doctor --repair，修复常见环境问题
       serviceLogger.info("正在执行 openclaw doctor --repair ...");
-      toast.info(t("overview.openclaw.doctorRepairing", { defaultValue: "正在检测并修复环境问题..." }));
+      toast.info(t("overview.openclaw.doctorRepairing", { defaultValue: "启动前自检中…" }));
       try {
         await openclawApi.runDoctorFix();
         serviceLogger.info("✅ doctor --repair 完成");

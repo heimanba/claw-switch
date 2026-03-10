@@ -97,6 +97,36 @@ fn strip_ansi_codes(s: &str) -> String {
     result
 }
 
+#[cfg(target_os = "windows")]
+fn escape_powershell_single_quoted(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+#[cfg(target_os = "windows")]
+fn escape_cmd_arg(s: &str) -> String {
+    // `cmd.exe` 会在执行前展开 `%VAR%`，即使参数已经被引号包裹。
+    // 这里将 `%` 转为 `%%`，避免用户输入被当成环境变量。
+    s.replace('%', "%%")
+}
+
+#[cfg(target_os = "windows")]
+fn make_hidden_windows_cmd_call(program: &str, args: &[&str]) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.arg("/D")
+        .arg("/C")
+        .arg("call")
+        .arg(program)
+        .args(args)
+        .env("PATH", get_extended_path())
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
+        .creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
 fn get_extended_path() -> String {
     let mut preferred: Vec<String> = Vec::new(); // nvm/Homebrew >= v22
     let mut mid: Vec<String> = Vec::new();       // fnm/volta/asdf/mise/npm-global
@@ -242,7 +272,7 @@ fn get_extended_path() -> String {
 
         // volta（%LOCALAPPDATA%\Programs\Volta 或 %USERPROFILE%\.volta\bin）
         if let Some(local) = dirs::data_local_dir() {
-            mid.push(local.join("Programs").join("Volta").display().to_string());
+            mid.push(local.join("Programs").join("Volta").join("bin").display().to_string());
             mid.push(local.join("Volta").join("bin").display().to_string());
         }
         if !home_str.is_empty() {
@@ -397,24 +427,11 @@ fn make_openclaw_command(args: &[&str]) -> std::process::Command {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        // 在 Windows 上通过 `chcp 65001 >nul 2>&1 && <bin> <args>` 切换代码页为 UTF-8，
-        // 避免 cmd.exe 默认 GBK/CP936 编码导致 Rust 读取 stderr/stdout 出现乱码。
-        // 同时设置 PYTHONIOENCODING / NODE_OPTIONS 保证子进程也输出 UTF-8。
-        let args_str: Vec<String> = args.iter().map(|s| {
-            // 转义参数内部的双引号，然后用引号包裹，防止 cmd.exe 命令注入
-            format!("\"{}\"", s.replace('"', "\\\""))
-        }).collect();
-        // bin 路径也用引号包裹，防止路径含空格（如 C:\Program Files\nodejs\openclaw.cmd）导致解析错误
-        let bin_quoted = format!("\"{}\"", bin.replace('"', "\\\""));
-        let combined_cmd = format!("chcp 65001 >nul 2>&1 && {} {}", bin_quoted, args_str.join(" "));
-        let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", &combined_cmd])
-            .env("PATH", extended_path)
-            .env("PYTHONIOENCODING", "utf-8")
-            .creation_flags(CREATE_NO_WINDOW);
-        cmd
+        // 不再手工拼接整条 `cmd /C "<bin> <args>"` 字符串。
+        // 某些 Windows 环境下，带引号的 `.cmd` 绝对路径会被 cmd.exe 当成字面量，
+        // 触发 `'"C:\...\openclaw.cmd"' 不是内部或外部命令`。
+        // 改为参数化的 `cmd /D /C call <bin> <args...>`，让系统负责正确转义。
+        make_hidden_windows_cmd_call(&bin, args)
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -1221,8 +1238,8 @@ pub async fn run_doctor() -> Result<Vec<DoctorItem>, String> {
             // 用 PATH 查找 openclaw 是否可调用
             #[cfg(target_os = "windows")]
             {
-                std::process::Command::new("cmd")
-                    .args(["/C", "where openclaw"])
+                std::process::Command::new("where")
+                    .arg("openclaw")
                     .env("PATH", get_extended_path())
                     .output()
                     .map(|o| o.status.success())
@@ -2145,12 +2162,10 @@ pub async fn install_openclaw_dingtalk_plugin() -> Result<String, String> {
     let npm_config_output = tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            std::process::Command::new("cmd")
-                .args(["/C", "chcp 65001 >nul 2>&1 && npm config set registry https://registry.npmmirror.com"])
-                .env("PATH", get_extended_path())
-                .creation_flags(CREATE_NO_WINDOW)
+            make_hidden_windows_cmd_call(
+                "npm",
+                &["config", "set", "registry", "https://registry.npmmirror.com"],
+            )
                 .output()
                 .map_err(|e| format!("设置 npm registry 失败: {}", e))
         }
@@ -2408,17 +2423,38 @@ read -p "按回车键关闭..."
             }
             #[cfg(target_os = "windows")]
             {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
                 let openclaw_bin = find_openclaw_bin();
-                let extended_path = get_extended_path();
-                // 用 cmd /C start 打开新的可见终端窗口执行登录命令
-                // /K 保持窗口在命令执行完后不关闭，方便用户扫码
-                let cmd_str = format!(
-                    "start \"OpenClaw WhatsApp Login\" cmd /K \"chcp 65001 && \"{}\" channels login --channel whatsapp --verbose\"",
-                    openclaw_bin.replace('"', "\\\"")
+                let script_path = std::env::temp_dir()
+                    .join(format!("cc_openclaw_whatsapp_login_{}.ps1", std::process::id()));
+                let script_content = format!(
+                    "$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()\n\
+chcp 65001 > $null\n\
+& '{}' 'channels' 'login' '--channel' 'whatsapp' '--verbose'\n\
+Write-Host ''\n\
+Write-Host '扫码完成后按任意键关闭...' -NoNewline\n\
+$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')\n",
+                    escape_powershell_single_quoted(&openclaw_bin),
                 );
+                let mut content_with_bom = vec![0xEF_u8, 0xBB, 0xBF];
+                content_with_bom.extend_from_slice(script_content.as_bytes());
+                std::fs::write(&script_path, &content_with_bom)
+                    .map_err(|e| format!("创建登录脚本失败: {}", e))?;
+                let script_str = script_path.to_string_lossy().into_owned();
                 std::process::Command::new("cmd")
-                    .args(["/C", &cmd_str])
-                    .env("PATH", extended_path)
+                    .args([
+                        "/C",
+                        "start",
+                        "OpenClaw WhatsApp Login",
+                        "powershell",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        &script_str,
+                    ])
+                    .env("PATH", get_extended_path())
+                    .creation_flags(CREATE_NO_WINDOW)
                     .spawn()
                     .map_err(|e| format!("启动终端失败: {}", e))?;
             }
@@ -2664,18 +2700,17 @@ pub async fn openclaw_clawhub_search(query: String) -> Result<Value, String> {
     let output = tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            // 对用户输入的搜索词引号转义，防止命令注入
-            let q_escaped = format!("\"{}\"", q.replace('"', "\\\""));
-            let cmd_str = format!(
-                "chcp 65001 >nul 2>&1 && npx -y --registry=https://registry.npmmirror.com clawhub search {}",
-                q_escaped
-            );
-            std::process::Command::new("cmd")
-                .args(["/C", &cmd_str])
-                .env("PATH", get_extended_path())
-                .creation_flags(CREATE_NO_WINDOW)
+            let q_escaped = escape_cmd_arg(&q);
+            make_hidden_windows_cmd_call(
+                "npx",
+                &[
+                    "-y",
+                    "--registry=https://registry.npmmirror.com",
+                    "clawhub",
+                    "search",
+                    &q_escaped,
+                ],
+            )
                 .output()
         }
         #[cfg(not(target_os = "windows"))]
@@ -2743,19 +2778,18 @@ pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
     let output = tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            // 对 slug 引号转义，防止命令注入
-            let slug_escaped = format!("\"{}\"", slug.replace('"', "\\\""));
-            let cmd_str = format!(
-                "chcp 65001 >nul 2>&1 && npx -y --registry=https://registry.npmmirror.com clawhub install {}",
-                slug_escaped
-            );
-            std::process::Command::new("cmd")
-                .args(["/C", &cmd_str])
-                .env("PATH", get_extended_path())
+            let slug_escaped = escape_cmd_arg(&slug);
+            make_hidden_windows_cmd_call(
+                "npx",
+                &[
+                    "-y",
+                    "--registry=https://registry.npmmirror.com",
+                    "clawhub",
+                    "install",
+                    &slug_escaped,
+                ],
+            )
                 .current_dir(&home)
-                .creation_flags(CREATE_NO_WINDOW)
                 .output()
         }
         #[cfg(not(target_os = "windows"))]
