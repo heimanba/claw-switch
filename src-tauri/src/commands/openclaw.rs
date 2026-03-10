@@ -198,9 +198,77 @@ fn get_extended_path() -> String {
         mid.push(format!("{home_str}/Library/pnpm"));
         mid.push(format!("{home_str}/.local/bin"));
 
-        #[cfg(target_os = "windows")]
+    }
+
+    // Windows：补充 node 常见安装路径（放在 home_str 判断块之外，避免 home 为空时丢失固定路径）
+    #[cfg(target_os = "windows")]
+    {
         if let Some(appdata) = dirs::data_dir() {
+            // npm 全局包目录（%APPDATA%\npm）
             mid.push(appdata.join("npm").display().to_string());
+
+            // nvm-windows：优先读 NVM_HOME 环境变量（用户自定义安装路径），
+            // 回退到 %APPDATA%\nvm（旧版 nvm-windows 默认路径）
+            let nvm_root = std::env::var("NVM_HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| appdata.join("nvm"));
+            if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+                let mut nvm_vers: Vec<_> = entries
+                    .flatten()
+                    .filter(|e| e.path().is_dir())
+                    .collect();
+                // 按目录名降序（v22.x.x > v20.x.x）
+                nvm_vers.sort_unstable_by(|a, b| b.file_name().cmp(&a.file_name()));
+                for entry in nvm_vers {
+                    let dir_path = entry.path();
+                    let node_exe = dir_path.join("node.exe");
+                    if node_exe.exists() {
+                        let dir_str = dir_path.display().to_string();
+                        let ver_name = entry.file_name().into_string().unwrap_or_default();
+                        let major: u32 = ver_name.trim_start_matches('v')
+                            .split('.')
+                            .next()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0);
+                        if major >= 22 {
+                            preferred.push(dir_str);
+                        } else {
+                            mid.push(dir_str);
+                        }
+                    }
+                }
+            }
+        }
+
+        // volta（%LOCALAPPDATA%\Programs\Volta 或 %USERPROFILE%\.volta\bin）
+        if let Some(local) = dirs::data_local_dir() {
+            mid.push(local.join("Programs").join("Volta").display().to_string());
+            mid.push(local.join("Volta").join("bin").display().to_string());
+        }
+        if !home_str.is_empty() {
+            mid.push(format!("{home_str}\\.volta\\bin"));
+        }
+
+        // fnm（%LOCALAPPDATA%\fnm_multishells 或 %LOCALAPPDATA%\fnm）
+        if let Some(local) = dirs::data_local_dir() {
+            mid.push(local.join("fnm").display().to_string());
+            mid.push(local.join("fnm_multishells").display().to_string());
+        }
+
+        // pnpm 全局（%LOCALAPPDATA%\pnpm）
+        if let Some(local) = dirs::data_local_dir() {
+            mid.push(local.join("pnpm").display().to_string());
+        }
+
+        // Node.js 官方安装包默认路径（与 home_str 无关，固定添加）
+        mid.push("C:\\Program Files\\nodejs".to_string());
+        mid.push("C:\\Program Files (x86)\\nodejs".to_string());
+
+        // Scoop（%USERPROFILE%\scoop\shims）
+        if !home_str.is_empty() {
+            mid.push(format!("{home_str}\\scoop\\shims"));
+            mid.push(format!("{home_str}\\scoop\\apps\\nodejs\\current"));
+            mid.push(format!("{home_str}\\scoop\\apps\\nodejs-lts\\current"));
         }
     }
 
@@ -239,9 +307,12 @@ fn find_openclaw_bin() -> String {
             candidates.push(appdata.join("npm").join("openclaw.cmd").display().to_string());
             candidates.push(appdata.join("npm").join("openclaw").display().to_string());
         }
-        // nvm-windows：%APPDATA%\nvm\vX.Y.Z\openclaw.cmd
+        // nvm-windows：优先读 NVM_HOME 环境变量（用户自定义安装路径），
+        // 回退到 %APPDATA%\nvm（旧版 nvm-windows 默认路径）
         if let Some(appdata) = dirs::data_dir() {
-            let nvm_root = appdata.join("nvm");
+            let nvm_root = std::env::var("NVM_HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| appdata.join("nvm"));
             if let Ok(entries) = std::fs::read_dir(&nvm_root) {
                 let mut nvm_vers: Vec<_> = entries.flatten().collect();
                 // 按目录名降序排列，优先最新版本
@@ -328,11 +399,20 @@ fn make_openclaw_command(args: &[&str]) -> std::process::Command {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let mut cmd_args = vec!["/C".to_string(), bin];
-        cmd_args.extend(args.iter().map(|s| s.to_string()));
+        // 在 Windows 上通过 `chcp 65001 >nul 2>&1 && <bin> <args>` 切换代码页为 UTF-8，
+        // 避免 cmd.exe 默认 GBK/CP936 编码导致 Rust 读取 stderr/stdout 出现乱码。
+        // 同时设置 PYTHONIOENCODING / NODE_OPTIONS 保证子进程也输出 UTF-8。
+        let args_str: Vec<String> = args.iter().map(|s| {
+            // 转义参数内部的双引号，然后用引号包裹，防止 cmd.exe 命令注入
+            format!("\"{}\"", s.replace('"', "\\\""))
+        }).collect();
+        // bin 路径也用引号包裹，防止路径含空格（如 C:\Program Files\nodejs\openclaw.cmd）导致解析错误
+        let bin_quoted = format!("\"{}\"", bin.replace('"', "\\\""));
+        let combined_cmd = format!("chcp 65001 >nul 2>&1 && {} {}", bin_quoted, args_str.join(" "));
         let mut cmd = std::process::Command::new("cmd");
-        cmd.args(&cmd_args)
+        cmd.args(["/C", &combined_cmd])
             .env("PATH", extended_path)
+            .env("PYTHONIOENCODING", "utf-8")
             .creation_flags(CREATE_NO_WINDOW);
         cmd
     }
@@ -1371,11 +1451,9 @@ pub async fn run_doctor() -> Result<Vec<DoctorItem>, String> {
     // 7. 运行 openclaw doctor（只读诊断，不含 --fix）
     // 使用 spawn_blocking 避免阻塞 tokio 异步线程，防止后续 reqwest 健康探测超时
     if openclaw_installed {
-        let openclaw_bin_clone = openclaw_bin.clone();
         let doctor_result = tokio::task::spawn_blocking(move || {
-            std::process::Command::new(&openclaw_bin_clone)
-                .arg("doctor")
-                .env("PATH", get_extended_path())
+            // 使用 make_openclaw_command 确保 Windows 上通过 cmd /C 执行 .cmd 文件
+            make_openclaw_command(&["doctor"])
                 .output()
         })
         .await
@@ -1691,15 +1769,18 @@ fn get_openclaw_env_file_path() -> String {
 /// Helper: read a value from the openclaw env file
 fn read_env_value(env_file: &str, key: &str) -> Option<String> {
     let content = std::fs::read_to_string(env_file).ok()?;
+    // 兼容两种格式：Unix "export KEY=value" 和 Windows "KEY=value"
+    let prefixes = [format!("export {}=", key), format!("{}=", key)];
     for line in content.lines() {
         let line = line.trim();
-        let prefix = format!("export {}=", key);
-        if line.starts_with(&prefix) {
-            let value = line
-                .trim_start_matches(&prefix)
-                .trim_matches('"')
-                .trim_matches('\'');
-            return Some(value.to_string());
+        for prefix in &prefixes {
+            if line.starts_with(prefix.as_str()) {
+                let value = line
+                    .trim_start_matches(prefix.as_str())
+                    .trim_matches('"')
+                    .trim_matches('\'');
+                return Some(value.to_string());
+            }
         }
     }
     None
@@ -1709,11 +1790,17 @@ fn read_env_value(env_file: &str, key: &str) -> Option<String> {
 fn set_env_value(env_file: &str, key: &str, value: &str) -> std::io::Result<()> {
     let content = std::fs::read_to_string(env_file).unwrap_or_default();
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-    let new_line = format!("export {}=\"{}\"", key, value);
+    // Windows 写 KEY="val"，非 Windows 写 export KEY="val"（与 shell source 兼容）
+    let new_line = if cfg!(target_os = "windows") {
+        format!("{}=\"{}\"", key, value)
+    } else {
+        format!("export {}=\"{}\"", key, value)
+    };
+    // 匹配时兼容两种前缀，确保覆盖已有条目
+    let prefixes = [format!("export {}=", key), format!("{}=", key)];
     let mut found = false;
     for line in &mut lines {
-        let prefix = format!("export {}=", key);
-        if line.starts_with(&prefix) {
+        if prefixes.iter().any(|p| line.starts_with(p.as_str())) {
             *line = new_line.clone();
             found = true;
             break;
@@ -1732,10 +1819,11 @@ fn set_env_value(env_file: &str, key: &str, value: &str) -> std::io::Result<()> 
 /// Helper: remove a value from the openclaw env file
 fn remove_env_value(env_file: &str, key: &str) -> std::io::Result<()> {
     let content = std::fs::read_to_string(env_file).unwrap_or_default();
-    let prefix = format!("export {}=", key);
+    // 同时过滤 "export KEY=" 和 "KEY=" 两种格式
+    let prefixes = [format!("export {}=", key), format!("{}=", key)];
     let lines: Vec<String> = content
         .lines()
-        .filter(|line| !line.starts_with(&prefix))
+        .filter(|line| !prefixes.iter().any(|p| line.starts_with(p.as_str())))
         .map(|s| s.to_string())
         .collect();
     std::fs::write(env_file, lines.join("\n"))
@@ -2055,11 +2143,25 @@ pub async fn install_openclaw_dingtalk_plugin() -> Result<String, String> {
     // 1. 先设置 npm registry 加速
     info!("[钉钉插件] 设置 npm registry 为淘宝镜像...");
     let npm_config_output = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("npm")
-            .args(["config", "set", "registry", "https://registry.npmmirror.com"])
-            .env("PATH", get_extended_path())
-            .output()
-            .map_err(|e| format!("设置 npm registry 失败: {}", e))
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            std::process::Command::new("cmd")
+                .args(["/C", "chcp 65001 >nul 2>&1 && npm config set registry https://registry.npmmirror.com"])
+                .env("PATH", get_extended_path())
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+                .map_err(|e| format!("设置 npm registry 失败: {}", e))
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            std::process::Command::new("npm")
+                .args(["config", "set", "registry", "https://registry.npmmirror.com"])
+                .env("PATH", get_extended_path())
+                .output()
+                .map_err(|e| format!("设置 npm registry 失败: {}", e))
+        }
     })
     .await
     .map_err(|e| format!("npm config 任务执行失败: {}", e))?;
@@ -2306,7 +2408,19 @@ read -p "按回车键关闭..."
             }
             #[cfg(target_os = "windows")]
             {
-                return Err("Windows 暂不支持自动启动终端，请手动运行: openclaw channels login --channel whatsapp".to_string());
+                let openclaw_bin = find_openclaw_bin();
+                let extended_path = get_extended_path();
+                // 用 cmd /C start 打开新的可见终端窗口执行登录命令
+                // /K 保持窗口在命令执行完后不关闭，方便用户扫码
+                let cmd_str = format!(
+                    "start \"OpenClaw WhatsApp Login\" cmd /K \"chcp 65001 && \"{}\" channels login --channel whatsapp --verbose\"",
+                    openclaw_bin.replace('"', "\\\"")
+                );
+                std::process::Command::new("cmd")
+                    .args(["/C", &cmd_str])
+                    .env("PATH", extended_path)
+                    .spawn()
+                    .map_err(|e| format!("启动终端失败: {}", e))?;
             }
             Ok("已在新终端窗口中启动 WhatsApp 登录，请查看弹出的终端窗口并扫描二维码".to_string())
         }
@@ -2482,11 +2596,12 @@ pub async fn clear_openclaw_log(path: String) -> Result<(), String> {
 /// On CLI failure, returns `{ skills: [], cliAvailable: false }`.
 #[tauri::command]
 pub async fn openclaw_skills_list() -> Result<Value, String> {
-    let bin = find_openclaw_bin();
-    let output = std::process::Command::new(&bin)
-        .args(["skills", "list", "--json"])
-        .env("PATH", get_extended_path())
-        .output();
+    let output = tokio::task::spawn_blocking(|| {
+        // 使用 make_openclaw_command 确保 Windows 上通过 cmd /C 执行 .cmd 文件
+        make_openclaw_command(&["skills", "list", "--json"]).output()
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?;
 
     match output {
         Ok(out) if out.status.success() => {
@@ -2516,12 +2631,13 @@ pub async fn openclaw_skills_list() -> Result<Value, String> {
 /// Calls `openclaw skills info <name> --json`.
 #[tauri::command]
 pub async fn openclaw_skills_info(name: String) -> Result<Value, String> {
-    let bin = find_openclaw_bin();
-    let output = std::process::Command::new(&bin)
-        .args(["skills", "info", &name, "--json"])
-        .env("PATH", get_extended_path())
-        .output()
-        .map_err(|e| format!("执行 openclaw skills info 失败: {}", e))?;
+    let output = tokio::task::spawn_blocking(move || {
+        // 使用 make_openclaw_command 确保 Windows 上通过 cmd /C 执行 .cmd 文件
+        make_openclaw_command(&["skills", "info", &name, "--json"]).output()
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("执行 openclaw skills info 失败: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if output.status.success() {
@@ -2545,12 +2661,34 @@ pub async fn openclaw_clawhub_search(query: String) -> Result<Value, String> {
         return Ok(json!([]));
     }
 
-    let output = tokio::process::Command::new("npx")
-        .args(["-y", "--registry=https://registry.npmmirror.com", "clawhub", "search", &q])
-        .env("PATH", get_extended_path())
-        .output()
-        .await
-        .map_err(|e| format!("执行 clawhub 失败: {}", e))?;
+    let output = tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            // 对用户输入的搜索词引号转义，防止命令注入
+            let q_escaped = format!("\"{}\"", q.replace('"', "\\\""));
+            let cmd_str = format!(
+                "chcp 65001 >nul 2>&1 && npx -y --registry=https://registry.npmmirror.com clawhub search {}",
+                q_escaped
+            );
+            std::process::Command::new("cmd")
+                .args(["/C", &cmd_str])
+                .env("PATH", get_extended_path())
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            std::process::Command::new("npx")
+                .args(["-y", "--registry=https://registry.npmmirror.com", "clawhub", "search", &q])
+                .env("PATH", get_extended_path())
+                .output()
+        }
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("执行 clawhub 失败: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2601,13 +2739,36 @@ pub async fn openclaw_clawhub_search(query: String) -> Result<Value, String> {
 pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
     let home = dirs::home_dir().unwrap_or_default();
 
-    let output = tokio::process::Command::new("npx")
-        .args(["-y", "--registry=https://registry.npmmirror.com", "clawhub", "install", &slug])
-        .env("PATH", get_extended_path())
-        .current_dir(&home)
-        .output()
-        .await
-        .map_err(|e| format!("执行 clawhub 失败: {}", e))?;
+    let output = tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            // 对 slug 引号转义，防止命令注入
+            let slug_escaped = format!("\"{}\"", slug.replace('"', "\\\""));
+            let cmd_str = format!(
+                "chcp 65001 >nul 2>&1 && npx -y --registry=https://registry.npmmirror.com clawhub install {}",
+                slug_escaped
+            );
+            std::process::Command::new("cmd")
+                .args(["/C", &cmd_str])
+                .env("PATH", get_extended_path())
+                .current_dir(&home)
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            std::process::Command::new("npx")
+                .args(["-y", "--registry=https://registry.npmmirror.com", "clawhub", "install", &slug])
+                .env("PATH", get_extended_path())
+                .current_dir(&home)
+                .output()
+        }
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("执行 clawhub 失败: {}", e))?;
 
     if output.status.success() {
         info!("[OpenClaw Skills] installed skill via clawhub: {}", slug);
