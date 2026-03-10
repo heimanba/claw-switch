@@ -2738,6 +2738,7 @@ pub async fn openclaw_clawhub_search(query: String) -> Result<Value, String> {
 #[tauri::command]
 pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
     let home = dirs::home_dir().unwrap_or_default();
+    let slug_clone = slug.clone();
 
     let output = tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
@@ -2771,7 +2772,7 @@ pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
     .map_err(|e| format!("执行 clawhub 失败: {}", e))?;
 
     if output.status.success() {
-        info!("[OpenClaw Skills] installed skill via clawhub: {}", slug);
+        info!("[OpenClaw Skills] installed skill via clawhub: {}", slug_clone);
         return Ok(());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
