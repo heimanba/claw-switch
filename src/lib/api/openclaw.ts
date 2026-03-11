@@ -350,11 +350,28 @@ export const openclawApi = {
   },
 
   /**
-   * 搜索 ClawHub 社区 Skills。
-   * 调用 `openclaw skills search <query> --json`。
+   * 获取 ClawHub 元数据：分类列表与推荐 slug。
    */
-  async clawHubSearch(query: string): Promise<ClawHubSkillItem[]> {
-    return await invoke("openclaw_clawhub_search", { query });
+  async clawHubSkillsMeta(): Promise<{
+    categories: Record<string, string[]>;
+    featured: string[];
+  }> {
+    return await invoke("openclaw_clawhub_skills_meta", {});
+  },
+
+  /**
+   * 搜索 ClawHub 社区 Skills（本地 JSON）。
+   * category: 分类名，如 "AI 智能"；不传则不过滤分类。
+   * query: 关键词；与 category 都为空时返回推荐列表。
+   */
+  async clawHubSearch(
+    query: string,
+    category?: string
+  ): Promise<ClawHubSkillItem[]> {
+    return await invoke("openclaw_clawhub_search", {
+      query: query ?? "",
+      category: category ?? null,
+    });
   },
 
   /**

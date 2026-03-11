@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::openclaw_config;
 use crate::store::AppState;
@@ -75,7 +75,8 @@ fn get_shell_node_bin_dir() -> Option<String> {
 ///   5. nvm 中版本号 < 22 的路径（兜底，避免挡住更新的 Homebrew node）
 ///   6. 当前进程 PATH（系统路径，可能含旧版 node）
 ///   7. /usr/bin:/bin 绝对兜底
-/// Strip ANSI escape codes from a string (e.g. \x1b[31m✖\x1b[39m → ✖)
+/// Strip ANSI escape codes from a string (e.g. \x1b[31m✖\x1b[39m → ✖).
+/// Also strips literal "[31m" / "[39m" style when ESC is missing (avoids GUI "乱码").
 fn strip_ansi_codes(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -89,6 +90,26 @@ fn strip_ansi_codes(s: &str) -> String {
                         break; // end of escape sequence
                     }
                 }
+            }
+        } else if c == '[' {
+            // Strip literal "[31m" / "[39m" etc when ESC was lost (e.g. in captured stderr)
+            let mut run = String::new();
+            let mut stripped = false;
+            while let Some(&p) = chars.peek() {
+                if p.is_ascii_digit() || p == ';' {
+                    run.push(p);
+                    chars.next();
+                } else if p == 'm' && !run.is_empty() {
+                    chars.next(); // consume 'm'
+                    stripped = true;
+                    break;
+                } else {
+                    break;
+                }
+            }
+            if !stripped {
+                result.push(c);
+                result.push_str(&run);
             }
         } else {
             result.push(c);
@@ -2688,82 +2709,149 @@ pub async fn openclaw_skills_info(name: String) -> Result<Value, String> {
     ))
 }
 
-/// Search ClawHub for community skills.
-/// Calls `npx -y clawhub search <query>` and parses plain-text output.
-#[tauri::command]
-pub async fn openclaw_clawhub_search(query: String) -> Result<Value, String> {
-    let q = query.trim().to_string();
-    if q.is_empty() {
-        return Ok(json!([]));
-    }
-
-    let output = tokio::task::spawn_blocking(move || {
-        #[cfg(target_os = "windows")]
-        {
-            let q_escaped = escape_cmd_arg(&q);
-            make_hidden_windows_cmd_call(
-                "npx",
-                &[
-                    "-y",
-                    "--registry=https://registry.npmmirror.com",
-                    "clawhub",
-                    "search",
-                    &q_escaped,
-                ],
-            )
-                .output()
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            std::process::Command::new("npx")
-                .args(["-y", "--registry=https://registry.npmmirror.com", "clawhub", "search", &q])
-                .env("PATH", get_extended_path())
-                .output()
-        }
+/// Path to bundled clawhub-skills.json (dev: next to crate; prod: from bundle).
+fn clawhub_skills_json_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let from_resource = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d: PathBuf| d.join("src").join("clawhub-skills.json"))
+        .filter(|p: &PathBuf| p.exists());
+    from_resource.or_else(|| {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let p = manifest.join("src").join("clawhub-skills.json");
+        if p.exists() { Some(p) } else { None }
     })
-    .await
-    .map_err(|e| format!("任务执行失败: {}", e))?
-    .map_err(|e| format!("执行 clawhub 失败: {}", e))?;
+}
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let raw = if stderr.trim().is_empty() { stdout.trim().to_string() } else { stderr.trim().to_string() };
-        // Strip ANSI escape codes (e.g. \x1b[31m✖\x1b[39m)
-        let clean = strip_ansi_codes(&raw);
-        // Map known error patterns to friendly messages
-        let friendly = if clean.contains("Rate limit exceeded") || clean.to_lowercase().contains("rate limit") {
-            "搜索频率超限，请稍后再试".to_string()
-        } else if clean.contains("ENOTFOUND") || clean.contains("network") || clean.contains("fetch failed") {
-            "网络连接失败，请检查网络后重试".to_string()
-        } else if clean.contains("ENOENT") || clean.contains("not found") {
-            "clawhub 命令未找到，请确认已安装 OpenClaw".to_string()
+/// Match skill against query (slug, name, description, tags); case-insensitive.
+fn skill_matches_query(skill: &Value, q: &str) -> bool {
+    let q_lower = q.to_lowercase();
+    let slug = skill.get("slug").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+    let name = skill.get("name").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+    let desc = skill.get("description").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+    let desc_zh = skill.get("description_zh").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+    let tags: String = skill
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(" "))
+        .unwrap_or_default()
+        .to_lowercase();
+    slug.contains(&q_lower)
+        || name.contains(&q_lower)
+        || desc.contains(&q_lower)
+        || desc_zh.contains(&q_lower)
+        || tags.contains(&q_lower)
+}
+
+fn skill_to_item(s: &Value) -> Value {
+    let slug = s.get("slug").and_then(|v| v.as_str()).unwrap_or("");
+    let name = s.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let desc = s
+        .get("description_zh")
+        .or_else(|| s.get("description"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    json!({ "slug": slug, "name": name, "description": desc })
+}
+
+/// Returns ClawHub metadata: categories (name -> keywords) and featured slug list.
+#[tauri::command]
+pub async fn openclaw_clawhub_skills_meta(app: tauri::AppHandle) -> Result<Value, String> {
+    let path = clawhub_skills_json_path(&app).ok_or_else(|| {
+        "未找到 clawhub-skills.json，请确认资源已正确打包。".to_string()
+    })?;
+
+    let json_str = tokio::task::spawn_blocking(move || fs::read_to_string(&path))
+        .await
+        .map_err(|e| format!("读取任务失败: {}", e))?
+        .map_err(|e| format!("读取 clawhub-skills.json 失败: {}", e))?;
+
+    let data: Value = serde_json::from_str(&json_str)
+        .map_err(|e| format!("解析 clawhub-skills.json 失败: {}", e))?;
+
+    let categories = data.get("categories").cloned().unwrap_or(json!({}));
+    let featured = data.get("featured").cloned().unwrap_or(json!([]));
+    Ok(json!({ "categories": categories, "featured": featured }))
+}
+
+/// Search ClawHub skills from bundled JSON (no network).
+/// category: optional category name (e.g. "AI 智能"); filters by category keywords.
+/// query: optional text; when empty and no category, returns featured list.
+#[tauri::command]
+pub async fn openclaw_clawhub_search(
+    app: tauri::AppHandle,
+    query: String,
+    category: Option<String>,
+) -> Result<Value, String> {
+    let path = clawhub_skills_json_path(&app).ok_or_else(|| {
+        "未找到 clawhub-skills.json，请确认资源已正确打包。".to_string()
+    })?;
+
+    let json_str = tokio::task::spawn_blocking(move || fs::read_to_string(&path))
+        .await
+        .map_err(|e| format!("读取任务失败: {}", e))?
+        .map_err(|e| format!("读取 clawhub-skills.json 失败: {}", e))?;
+
+    let data: Value = serde_json::from_str(&json_str).map_err(|e| {
+        format!("解析 clawhub-skills.json 失败: {}", e)
+    })?;
+
+    let skills = data.get("skills").and_then(|v| v.as_array()).ok_or_else(|| {
+        "clawhub-skills.json 格式错误: 缺少 skills 数组".to_string()
+    })?;
+
+    let q = query.trim();
+    let cat = category.as_deref().unwrap_or("").trim();
+
+    let items: Vec<Value> = if cat.is_empty() && q.is_empty() {
+        let featured: &[Value] = data
+            .get("featured")
+            .and_then(|v| v.as_array())
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let slug_set: std::collections::HashSet<&str> = featured
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        skills
+            .iter()
+            .filter(|s| slug_set.contains(s.get("slug").and_then(|v| v.as_str()).unwrap_or("")))
+            .map(skill_to_item)
+            .collect()
+    } else {
+        let category_keywords: Vec<&str> = if cat.is_empty() {
+            vec![]
         } else {
-            clean
+            data.get("categories")
+                .and_then(|c| c.get(cat))
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default()
         };
-        return Err(format!("ClawHub 搜索失败: {}", friendly));
-    }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+        let filtered: Vec<&Value> = skills
+            .iter()
+            .filter(|s| {
+                if !category_keywords.is_empty() {
+                    let in_category = category_keywords
+                        .iter()
+                        .any(|kw| skill_matches_query(s, kw));
+                    if !in_category {
+                        return false;
+                    }
+                }
+                if q.is_empty() {
+                    true
+                } else {
+                    skill_matches_query(s, q)
+                }
+            })
+            .take(300)
+            .collect();
 
-    // Try JSON first
-    if let Ok(parsed) = serde_json::from_str::<Value>(stdout.trim()) {
-        return Ok(parsed);
-    }
-
-    // Plain-text: each non-empty line is a skill entry
-    let items: Vec<Value> = stdout
-        .lines()
-        .map(|l| l.trim())
-        .filter(|l| !l.is_empty() && !l.starts_with('-') && !l.starts_with("Search"))
-        .map(|l| {
-            let parts: Vec<&str> = l.splitn(2, char::is_whitespace).collect();
-            let slug = parts.first().unwrap_or(&"").trim();
-            let desc = parts.get(1).unwrap_or(&"").trim();
-            json!({ "slug": slug, "description": desc, "source": "clawhub" })
-        })
-        .filter(|v| !v["slug"].as_str().unwrap_or("").is_empty())
-        .collect();
+        filtered.iter().map(|s| skill_to_item(s)).collect()
+    };
 
     Ok(json!(items))
 }
@@ -2781,13 +2869,7 @@ pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
             let slug_escaped = escape_cmd_arg(&slug);
             make_hidden_windows_cmd_call(
                 "npx",
-                &[
-                    "-y",
-                    "--registry=https://registry.npmmirror.com",
-                    "clawhub",
-                    "install",
-                    &slug_escaped,
-                ],
+                &["-y", "clawhub", "install", &slug_escaped],
             )
                 .current_dir(&home)
                 .output()
@@ -2795,7 +2877,7 @@ pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
         #[cfg(not(target_os = "windows"))]
         {
             std::process::Command::new("npx")
-                .args(["-y", "--registry=https://registry.npmmirror.com", "clawhub", "install", &slug])
+                .args(["-y", "clawhub", "install", &slug])
                 .env("PATH", get_extended_path())
                 .current_dir(&home)
                 .output()
@@ -2811,10 +2893,9 @@ pub async fn openclaw_clawhub_install(slug: String) -> Result<(), String> {
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Err(format!(
-        "安装 skill 失败: {}",
-        if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }
-    ))
+    let raw = if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() };
+    let cleaned = strip_ansi_codes(raw);
+    Err(format!("安装 skill 失败: {}", cleaned.trim()))
 }
 
 /// Install skills from ZIP file directly to ~/.openclaw/skills/ (without SSOT/database).

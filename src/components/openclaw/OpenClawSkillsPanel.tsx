@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -174,44 +174,79 @@ interface ClawHubSectionProps {
   onInstalled: () => void;
 }
 
+const CLAWHUB_CATEGORY_LABELS: Record<string, string> = {
+  "AI 智能": "AI 智能",
+  "开发工具": "开发工具",
+  "效率提升": "效率提升",
+  "数据分析": "数据分析",
+  "内容创作": "内容创作",
+  "安全合规": "安全合规",
+  "通讯协作": "通讯协作",
+};
+
 function ClawHubSection({ onInstalled }: ClawHubSectionProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [categoryNames, setCategoryNames] = useState<string[]>([]);
   const [results, setResults] = useState<ClawHubSkillItem[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  /** 当前列表中安装失败的 skill slug 及错误信息，用于在对应行内展示 */
+  const [installFailedSlug, setInstallFailedSlug] = useState<string | null>(null);
+  const [installFailedMessage, setInstallFailedMessage] = useState<string | null>(null);
 
   const installMutation = useMutation({
     mutationFn: (slug: string) => openclawApi.clawHubInstall(slug),
     onSuccess: (_data, slug) => {
+      setInstallFailedSlug(null);
+      setInstallFailedMessage(null);
       toast.success(
         t("openclaw.skills.clawHub.installSuccess", { slug, defaultValue: `Skill ${slug} 安装成功` })
       );
       onInstalled();
     },
-    onError: (e) => {
-      toast.error(
-        t("openclaw.skills.clawHub.installFailed", { defaultValue: "安装失败" }),
-        { description: String(e) }
-      );
+    onError: (e, slug) => {
+      setInstallFailedSlug(slug);
+      setInstallFailedMessage(String(e));
     },
   });
 
-  const handleSearch = async () => {
-    if (!query.trim()) return;
+  const loadList = async (searchQuery: string, category: string | null) => {
     setSearching(true);
     setSearchError(null);
     try {
-      const items = await openclawApi.clawHubSearch(query.trim());
+      const items = await openclawApi.clawHubSearch(searchQuery, category ?? undefined);
       setResults(Array.isArray(items) ? items : []);
     } catch (e) {
-      // Strip redundant "Error: " prefix if present
       const msg = String(e).replace(/^Error:\s*/i, "");
       setSearchError(msg);
       setResults([]);
     } finally {
       setSearching(false);
     }
+  };
+
+  useEffect(() => {
+    openclawApi
+      .clawHubSkillsMeta()
+      .then((meta) => {
+        const names = meta.categories ? Object.keys(meta.categories) : [];
+        setCategoryNames(names);
+        loadList("", null);
+      })
+      .catch(() => {
+        loadList("", null);
+      });
+  }, []);
+
+  const handleSearch = async () => {
+    await loadList(query.trim(), selectedCategory);
+  };
+
+  const handleCategoryClick = (category: string | null) => {
+    setSelectedCategory(category);
+    loadList(query.trim(), category);
   };
 
   return (
@@ -227,6 +262,31 @@ function ClawHubSection({ onInstalled }: ClawHubSectionProps) {
       </div>
 
       <div className="p-4">
+        {/* Category tabs */}
+        {categoryNames.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            <Button
+              variant={selectedCategory === null ? "secondary" : "ghost"}
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => handleCategoryClick(null)}
+            >
+              {t("openclaw.skills.clawHub.allCategories", { defaultValue: "全部" })}
+            </Button>
+            {categoryNames.map((name) => (
+              <Button
+                key={name}
+                variant={selectedCategory === name ? "secondary" : "ghost"}
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => handleCategoryClick(name)}
+              >
+                {CLAWHUB_CATEGORY_LABELS[name] ?? name}
+              </Button>
+            ))}
+          </div>
+        )}
+
         {/* Search bar */}
         <div className="flex gap-2 mb-3">
           <Input
@@ -241,7 +301,7 @@ function ClawHubSection({ onInstalled }: ClawHubSectionProps) {
           <Button
             size="sm"
             onClick={handleSearch}
-            disabled={searching || !query.trim()}
+            disabled={searching}
             className="h-9 min-w-[72px]"
           >
             {searching ? (
@@ -260,9 +320,11 @@ function ClawHubSection({ onInstalled }: ClawHubSectionProps) {
         {/* Results */}
         {results === null && !searchError && (
           <p className="text-xs text-muted-foreground text-center py-3">
-            {t("openclaw.skills.clawHub.hint", {
-              defaultValue: "输入关键词搜索 ClawHub 社区 Skills",
-            })}
+            {searching
+              ? t("openclaw.skills.clawHub.loading", { defaultValue: "加载中…" })
+              : t("openclaw.skills.clawHub.hint", {
+                  defaultValue: "输入关键词搜索 ClawHub 社区 Skills",
+                })}
           </p>
         )}
         {searchError && (
@@ -299,35 +361,71 @@ function ClawHubSection({ onInstalled }: ClawHubSectionProps) {
         )}
         {results && results.length > 0 && (
           <div className="rounded-lg border border-border-subtle divide-y divide-border-subtle">
-            {results.map((item) => (
-              <div
-                key={item.slug}
-                className="px-4 py-3 flex items-center gap-3 hover:bg-muted/30 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {item.slug || item.name}
-                  </p>
-                  {(item.description || item.summary) && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {item.description || item.summary}
-                    </p>
+            {results.map((item) => {
+              const isFailed = installFailedSlug === item.slug;
+              const clawHubUrl = `https://clawhub.ai/skills?sort=downloads&q=${encodeURIComponent(item.slug)}`;
+              return (
+                <div
+                  key={item.slug}
+                  className={cn(
+                    "px-4 py-3 flex flex-col gap-1 hover:bg-muted/30 transition-colors",
+                    isFailed && "bg-red-50/50 dark:bg-red-950/20"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {item.slug || item.name}
+                      </p>
+                      {(item.description || item.summary) && (
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {item.description || item.summary}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={installMutation.isPending && installMutation.variables === item.slug}
+                      onClick={() => {
+                        if (item.slug === installFailedSlug) {
+                          setInstallFailedSlug(null);
+                          setInstallFailedMessage(null);
+                        }
+                        installMutation.mutate(item.slug);
+                      }}
+                      className="h-7 shrink-0"
+                    >
+                      {installMutation.isPending && installMutation.variables === item.slug ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        t("openclaw.skills.clawHub.install", { defaultValue: "安装" })
+                      )}
+                    </Button>
+                  </div>
+                  {isFailed && installFailedMessage && (
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <span className="text-red-600 dark:text-red-400 shrink-0">
+                        {installFailedMessage}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-accent hover:underline font-medium inline-flex items-center gap-1"
+                        onClick={async () => {
+                          try {
+                            await settingsApi.openExternal(clawHubUrl);
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        {t("openclaw.skills.clawHub.openOnFail", { defaultValue: "打开 ClawHub 页面" })}
+                      </button>
+                    </div>
                   )}
                 </div>
-                <Button
-                  size="sm"
-                  disabled={installMutation.isPending && installMutation.variables === item.slug}
-                  onClick={() => installMutation.mutate(item.slug)}
-                  className="h-7 shrink-0"
-                >
-                  {installMutation.isPending && installMutation.variables === item.slug ? (
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                  ) : (
-                    t("openclaw.skills.clawHub.install", { defaultValue: "安装" })
-                  )}
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
